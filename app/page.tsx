@@ -25,6 +25,7 @@ import {
   Crown,
   AlertTriangle,
   ArrowUpRight,
+  CornerDownRight,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
@@ -680,29 +681,10 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // RENKLİ KARTLI GİRİŞ EKRANI (SARI: SUPER ADMIN, YEŞİL: ANA ACENTE, MAVİ: ALT ACENTE)
+  // GİRİŞ EKRANI: SÜPER ADMİN EN ÜSTTE, ALTINDA ANA ACENTE (ÜST MENÜ) & ALT ACENTE (ALT MENÜ) HİYERARŞİSİ
   if (!currentUser) {
-    const getRoleCardStyle = (role: UserRole, isSelected: boolean) => {
-      if (role === "SUPER_ADMIN") {
-        return isSelected
-          ? "bg-amber-500/35 border-amber-300 text-amber-50 ring-2 ring-amber-300/60"
-          : "bg-amber-500/20 border-amber-400/50 text-amber-100 hover:bg-amber-500/30";
-      }
-      if (role === "TENANT_ADMIN") {
-        return isSelected
-          ? "bg-emerald-500/35 border-emerald-300 text-emerald-50 ring-2 ring-emerald-300/60"
-          : "bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30";
-      }
-      return isSelected
-        ? "bg-sky-500/35 border-sky-300 text-sky-50 ring-2 ring-sky-300/60"
-        : "bg-sky-500/20 border-sky-400/50 text-sky-100 hover:bg-sky-500/30";
-    };
-
-    const getRoleTag = (role: UserRole) => {
-      if (role === "SUPER_ADMIN") return "Süper Admin";
-      if (role === "TENANT_ADMIN") return "Ana Acente";
-      return "Alt Acente";
-    };
+    const superAdminAcc = accounts.find((a) => a.role === "SUPER_ADMIN");
+    const isSuperSelected = superAdminAcc?.id === selectedAccountId;
 
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-3 sm:p-6">
@@ -715,37 +697,124 @@ export default function TurizmSaaSPanel() {
                 MCF B2B TURİZM PORTALI
               </h1>
               <p className="text-xs text-slate-400">
-                Kartınıza tıklayın ve şifrenizi girin
+                Hesabınızı seçin ve şifrenizi girin
               </p>
             </div>
           </div>
 
-          {/* RENKLİ HESAP DİVLERİ */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {accounts.map((acc) => {
-              const isSelected = acc.id === selectedAccountId;
+          {/* EN ÜSTTE SÜPER ADMİN BUTONU (FİRMALARDAN AYRI) */}
+          {superAdminAcc && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedAccountId(superAdminAcc.id);
+                setLoginError("");
+              }}
+              className={`w-full text-left rounded-2xl p-4 border transition cursor-pointer flex items-center justify-between gap-3 ${
+                isSuperSelected
+                  ? "bg-amber-500/35 border-amber-300 text-amber-50 ring-2 ring-amber-300/60"
+                  : "bg-amber-500/20 border-amber-400/50 text-amber-100 hover:bg-amber-500/30"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center shrink-0">
+                  <Crown className="w-5 h-5 text-amber-200" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider block opacity-90">
+                    SÜPER ADMİN
+                  </span>
+                  <p className="text-sm sm:text-base font-bold truncate">{superAdminAcc.fullName}</p>
+                  <p className="text-[11px] opacity-80 truncate">{superAdminAcc.tenantName}</p>
+                </div>
+              </div>
+              {isSuperSelected && <CheckCircle2 className="w-5 h-5 shrink-0 text-amber-200" />}
+            </button>
+          )}
+
+          {/* ANA ACENTE (ÜST MENÜ) & ALT ACENTE (ALT MENÜ) HİYERARŞİSİ */}
+          <div className="space-y-4">
+            {tenants.map((tenant) => {
+              const mainAgencyAcc = accounts.find(
+                (a) => a.role === "TENANT_ADMIN" && a.tenantId === tenant.id
+              );
+              const subAgencyAccs = accounts.filter(
+                (a) => a.role === "SUB_AGENT" && a.tenantId === tenant.id
+              );
+              const isMainSelected = mainAgencyAcc?.id === selectedAccountId;
+
               return (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAccountId(acc.id);
-                    setLoginError("");
-                  }}
-                  className={`text-left rounded-2xl p-3.5 border transition cursor-pointer ${getRoleCardStyle(
-                    acc.role,
-                    isSelected
-                  )}`}
+                <div
+                  key={tenant.id}
+                  className="bg-[#080c16] border border-slate-800/90 rounded-2xl p-3.5 sm:p-4 space-y-2.5"
                 >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider opacity-90">
-                      {getRoleTag(acc.role)}
-                    </span>
-                    {isSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-                  </div>
-                  <p className="text-sm font-bold truncate">{acc.fullName}</p>
-                  <p className="text-[11px] opacity-80 truncate mt-0.5">{acc.tenantName}</p>
-                </button>
+                  {/* ÜST MENÜ: ANA ACENTE */}
+                  {mainAgencyAcc && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAccountId(mainAgencyAcc.id);
+                        setLoginError("");
+                      }}
+                      className={`w-full text-left rounded-xl p-3.5 border transition cursor-pointer flex items-center justify-between gap-2 ${
+                        isMainSelected
+                          ? "bg-emerald-500/35 border-emerald-300 text-emerald-50 ring-2 ring-emerald-300/60"
+                          : "bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider opacity-90">
+                            ANA ACENTE
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-black/30 opacity-90">
+                            {tenant.plan}
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold truncate mt-0.5">{tenant.name}</p>
+                        <p className="text-[11px] opacity-80 truncate">{mainAgencyAcc.fullName}</p>
+                      </div>
+                      {isMainSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                    </button>
+                  )}
+
+                  {/* ALT MENÜ: BAĞLI ALT ACENTELER */}
+                  {subAgencyAccs.length > 0 && (
+                    <div className="pl-3 sm:pl-6 border-l-2 border-sky-400/40 space-y-2">
+                      {subAgencyAccs.map((sub) => {
+                        const isSubSelected = sub.id === selectedAccountId;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAccountId(sub.id);
+                              setLoginError("");
+                            }}
+                            className={`w-full text-left rounded-xl px-3.5 py-2.5 border transition cursor-pointer flex items-center justify-between gap-2 ${
+                              isSubSelected
+                                ? "bg-sky-500/35 border-sky-300 text-sky-50 ring-2 ring-sky-300/60"
+                                : "bg-sky-500/20 border-sky-400/50 text-sky-100 hover:bg-sky-500/30"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <CornerDownRight className="w-4 h-4 shrink-0 opacity-80" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider opacity-90 mr-2">
+                                  ALT ACENTE
+                                </span>
+                                <span className="text-xs sm:text-sm font-bold truncate">
+                                  {sub.fullName}
+                                </span>
+                              </div>
+                            </div>
+                            {isSubSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -1038,7 +1107,7 @@ export default function TurizmSaaSPanel() {
                   Ana Acente & Alt Acente Hiyerarşi Haritası
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                  Organizasyon ve alt acente yapısı.
+                  Üst menüde Ana Acente, alt menüde bağlı Alt Acenteler.
                 </p>
               </div>
 
@@ -1212,7 +1281,7 @@ export default function TurizmSaaSPanel() {
                         <option value="Pro">Pro</option>
                       </select>
                       <input
-                        type="text"
+                        type="password"
                         required
                         value={newAgencyPassword}
                         onChange={(e) => setNewAgencyPassword(e.target.value)}
@@ -1324,7 +1393,7 @@ export default function TurizmSaaSPanel() {
                   />
 
                   <input
-                    type="text"
+                    type="password"
                     required
                     value={newSubPassword}
                     onChange={(e) => setNewSubPassword(e.target.value)}
