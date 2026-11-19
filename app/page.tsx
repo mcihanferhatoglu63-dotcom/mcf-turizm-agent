@@ -714,9 +714,7 @@ export default function TurizmSaaSPanel() {
               <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
                 MCF B2B TURİZM PORTALI
               </h1>
-              <p className="text-xs text-slate-400">
-                Kartınıza tıklayın ve sadece şifrenizi girin
-              </p>
+
             </div>
           </div>
 
