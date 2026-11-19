@@ -714,7 +714,9 @@ export default function TurizmSaaSPanel() {
               <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
                 MCF B2B TURİZM PORTALI
               </h1>
-
+              <p className="text-xs text-slate-400">
+                Kartınıza tıklayın ve şifrenizi girin
+              </p>
             </div>
           </div>
 
@@ -748,18 +750,13 @@ export default function TurizmSaaSPanel() {
             })}
           </div>
 
-          {/* SADECE ŞİFRE GİRİŞ FORMU */}
+          {/* ŞİFRE GİRİŞ FORMU */}
           <form
             onSubmit={handlePasswordLogin}
             className="bg-[#080c16] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
-              <span className="text-slate-400">
-                Seçili Hesap: <strong className="text-white">{chosenAccount.fullName}</strong>
-              </span>
-              <span className="text-slate-500">
-                Şifre: <code className="text-indigo-400">{chosenAccount.password}</code>
-              </span>
+            <div className="text-xs text-slate-400">
+              Seçili Hesap: <strong className="text-white">{chosenAccount.fullName}</strong>
             </div>
 
             <div className="flex items-center gap-2.5 bg-[#0e1422] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
@@ -769,7 +766,7 @@ export default function TurizmSaaSPanel() {
                 required
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Sadece şifrenizi girin..."
+                placeholder="Şifrenizi girin..."
                 className="bg-transparent text-sm text-white w-full focus:outline-none"
               />
             </div>
