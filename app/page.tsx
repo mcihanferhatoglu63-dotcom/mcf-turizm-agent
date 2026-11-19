@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import {
-  Building2,
   Users,
   ShieldCheck,
   Send,
@@ -19,10 +18,27 @@ import {
   Lock,
   KeyRound,
   Briefcase,
+  Trash2,
+  UserPlus,
+  Building,
+  Network,
+  Menu,
+  Crown,
+  AlertTriangle,
+  ArrowUpRight,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
-type ActiveTab = "dashboard" | "tenants" | "bookings";
+type PlanType = "Trial" | "Basic" | "Pro";
+type ActiveTab = "dashboard" | "tenants" | "hierarchy" | "bookings";
+
+interface TenantAgency {
+  id: string;
+  name: string;
+  plan: PlanType;
+  revenue: string;
+  status: "Aktif" | "Deneme";
+}
 
 interface UserAccount {
   id: string;
@@ -63,74 +79,189 @@ interface BookingItem {
   status: string;
 }
 
-const USER_ACCOUNTS: UserAccount[] = [
+const PLAN_LIMITS: Record<
+  PlanType,
   {
-    id: "usr-super",
-    username: "superadmin",
-    password: "123",
-    fullName: "Platform Yöneticisi (Sistem Operatörü)",
-    role: "SUPER_ADMIN",
-    tenantId: null,
-    tenantName: "MCF B2B Turizm Altyapısı",
+    maxInventory: number;
+    maxSubAgents: number;
+    badgeClass: string;
+    summary: string;
+  }
+> = {
+  Trial: {
+    maxInventory: 2,
+    maxSubAgents: 1,
+    badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    summary: "Demo: Maks. 2 kontenjan, 1 alt acente",
   },
-  {
-    id: "usr-akdeniz-owner",
-    username: "akdeniz_sahip",
-    password: "123",
-    fullName: "Hakan Kaya",
-    role: "TENANT_ADMIN",
-    tenantId: "FIRM-AKDENIZ",
-    tenantName: "Akdeniz Turizm A.Ş.",
+  Basic: {
+    maxInventory: 5,
+    maxSubAgents: 3,
+    badgeClass: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+    summary: "Basic: Maks. 5 kontenjan, 3 alt acente",
   },
-  {
-    id: "usr-akdeniz-agent1",
-    username: "akdeniz_araci1",
-    password: "123",
-    fullName: "Mert Arslan",
-    role: "SUB_AGENT",
-    tenantId: "FIRM-AKDENIZ",
-    tenantName: "Akdeniz Turizm A.Ş.",
-    subAgentCode: "AGT-01",
+  Pro: {
+    maxInventory: Infinity,
+    maxSubAgents: Infinity,
+    badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    summary: "Pro: Sınırsız kontenjan, sınırsız alt acente ve tam modüller",
   },
-  {
-    id: "usr-akdeniz-agent2",
-    username: "akdeniz_araci2",
-    password: "123",
-    fullName: "Selin Yıldız",
-    role: "SUB_AGENT",
-    tenantId: "FIRM-AKDENIZ",
-    tenantName: "Akdeniz Turizm A.Ş.",
-    subAgentCode: "AGT-02",
-  },
-  {
-    id: "usr-erdemli-owner",
-    username: "erdemli_sahip",
-    password: "123",
-    fullName: "Kemal Doğan",
-    role: "TENANT_ADMIN",
-    tenantId: "FIRM-ERDEMLI",
-    tenantName: "Erdemli & Silifke Travel",
-  },
-  {
-    id: "usr-erdemli-agent1",
-    username: "erdemli_araci1",
-    password: "123",
-    fullName: "Deniz Koç",
-    role: "SUB_AGENT",
-    tenantId: "FIRM-ERDEMLI",
-    tenantName: "Erdemli & Silifke Travel",
-    subAgentCode: "ERD-01",
-  },
-];
+};
+
+function BrandLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const [imgError, setImgError] = useState(false);
+
+  const dims =
+    size === "lg"
+      ? "h-14 sm:h-16 w-auto max-w-[190px] sm:max-w-[220px]"
+      : size === "sm"
+      ? "h-7 w-auto max-w-[96px]"
+      : "h-10 w-auto max-w-[140px]";
+
+  if (imgError) {
+    return (
+      <div className="inline-flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/40 px-3 py-1.5 rounded-xl">
+        <span className="font-black tracking-wider text-amber-400 text-sm">MCF</span>
+        <span className="text-[11px] text-purple-300 font-semibold">B2B</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src="/logo.png"
+      alt="MCF Technology & Software Solutions"
+      onError={() => setImgError(true)}
+      className={`${dims} object-contain rounded-xl border border-slate-700/80 bg-[#080c16] p-1 shrink-0`}
+    />
+  );
+}
 
 export default function TurizmSaaSPanel() {
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
-  const [loginUsername, setLoginUsername] = useState("");
+  const [tenants, setTenants] = useState<TenantAgency[]>([
+    {
+      id: "FIRM-AKDENIZ",
+      name: "Akdeniz Turizm A.Ş.",
+      plan: "Pro",
+      revenue: "425.000 ₺",
+      status: "Aktif",
+    },
+    {
+      id: "FIRM-ERDEMLI",
+      name: "Erdemli & Silifke Travel",
+      plan: "Basic",
+      revenue: "148.000 ₺",
+      status: "Aktif",
+    },
+    {
+      id: "FIRM-DEMO",
+      name: "Mersin Demo Acente",
+      plan: "Trial",
+      revenue: "12.000 ₺",
+      status: "Deneme",
+    },
+  ]);
+
+  const [accounts, setAccounts] = useState<UserAccount[]>([
+    {
+      id: "usr-super",
+      username: "superadmin",
+      password: "123",
+      fullName: "Platform Yöneticisi (Sistem Operatörü)",
+      role: "SUPER_ADMIN",
+      tenantId: null,
+      tenantName: "MCF B2B Turizm Altyapısı",
+    },
+    {
+      id: "usr-akdeniz-owner",
+      username: "akdeniz_ana",
+      password: "123",
+      fullName: "Hakan Kaya",
+      role: "TENANT_ADMIN",
+      tenantId: "FIRM-AKDENIZ",
+      tenantName: "Akdeniz Turizm A.Ş.",
+    },
+    {
+      id: "usr-akdeniz-sub1",
+      username: "akdeniz_alt1",
+      password: "123",
+      fullName: "Mert Arslan",
+      role: "SUB_AGENT",
+      tenantId: "FIRM-AKDENIZ",
+      tenantName: "Akdeniz Turizm A.Ş.",
+      subAgentCode: "ALT-01",
+    },
+    {
+      id: "usr-akdeniz-sub2",
+      username: "akdeniz_alt2",
+      password: "123",
+      fullName: "Selin Yıldız",
+      role: "SUB_AGENT",
+      tenantId: "FIRM-AKDENIZ",
+      tenantName: "Akdeniz Turizm A.Ş.",
+      subAgentCode: "ALT-02",
+    },
+    {
+      id: "usr-erdemli-owner",
+      username: "erdemli_ana",
+      password: "123",
+      fullName: "Kemal Doğan",
+      role: "TENANT_ADMIN",
+      tenantId: "FIRM-ERDEMLI",
+      tenantName: "Erdemli & Silifke Travel",
+    },
+    {
+      id: "usr-erdemli-sub1",
+      username: "erdemli_alt1",
+      password: "123",
+      fullName: "Deniz Koç",
+      role: "SUB_AGENT",
+      tenantId: "FIRM-ERDEMLI",
+      tenantName: "Erdemli & Silifke Travel",
+      subAgentCode: "ERD-01",
+    },
+    {
+      id: "usr-demo-owner",
+      username: "demo_ana",
+      password: "123",
+      fullName: "Ece Demir",
+      role: "TENANT_ADMIN",
+      tenantId: "FIRM-DEMO",
+      tenantName: "Mersin Demo Acente",
+    },
+    {
+      id: "usr-demo-sub1",
+      username: "demo_alt1",
+      password: "123",
+      fullName: "Burak Şahin",
+      role: "SUB_AGENT",
+      tenantId: "FIRM-DEMO",
+      tenantName: "Mersin Demo Acente",
+      subAgentCode: "DEM-01",
+    },
+  ]);
+
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("usr-super");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [limitNotice, setLimitNotice] = useState<string>("");
 
+  // Yeni Ana Acente Form State'leri
+  const [newAgencyName, setNewAgencyName] = useState("");
+  const [newAgencyOwnerName, setNewAgencyOwnerName] = useState("");
+  const [newAgencyPassword, setNewAgencyPassword] = useState("123");
+  const [newAgencyPlan, setNewAgencyPlan] = useState<PlanType>("Pro");
+
+  // Yeni Alt Acente Form State'leri
+  const [newSubFullName, setNewSubFullName] = useState("");
+  const [newSubPassword, setNewSubPassword] = useState("123");
+  const [newSubTenantId, setNewSubTenantId] = useState("FIRM-AKDENIZ");
+
+  // Envanter State'i
   const [inventory, setInventory] = useState<InventoryItem[]>([
     {
       id: "HTL-01",
@@ -155,17 +286,6 @@ export default function TurizmSaaSPanel() {
       commission: 700,
     },
     {
-      id: "OTB-04",
-      tenantId: "FIRM-AKDENIZ",
-      tenantName: "Akdeniz Turizm A.Ş.",
-      category: "OTOBÜS",
-      title: "Mersin - İstanbul 2+1 VIP Koltuk",
-      quota: 4,
-      netPrice: 850,
-      sellPrice: 1000,
-      commission: 150,
-    },
-    {
       id: "PNS-02",
       tenantId: "FIRM-ERDEMLI",
       tenantName: "Erdemli & Silifke Travel",
@@ -177,24 +297,25 @@ export default function TurizmSaaSPanel() {
       commission: 200,
     },
     {
-      id: "UCK-05",
-      tenantId: "FIRM-ERDEMLI",
-      tenantName: "Erdemli & Silifke Travel",
-      category: "UÇAK",
-      title: "Çukurova - Sabiha Gökçen Blok Bilet",
-      quota: 7,
-      netPrice: 1650,
-      sellPrice: 1950,
-      commission: 300,
+      id: "DEM-01",
+      tenantId: "FIRM-DEMO",
+      tenantName: "Mersin Demo Acente",
+      category: "OTOBÜS",
+      title: "Mersin - Adana Transfer Kontenjanı",
+      quota: 8,
+      netPrice: 250,
+      sellPrice: 350,
+      commission: 100,
     },
   ]);
 
+  // Rezervasyon State'i
   const [bookings, setBookings] = useState<BookingItem[]>([
     {
       pnr: "MCF-4821",
       tenantId: "FIRM-AKDENIZ",
       tenantName: "Akdeniz Turizm A.Ş.",
-      agentUsername: "akdeniz_araci1",
+      agentUsername: "akdeniz_alt1",
       agentName: "Mert Arslan",
       customerName: "Ahmet Yılmaz",
       customerPhone: "905551112233",
@@ -206,25 +327,10 @@ export default function TurizmSaaSPanel() {
       status: "Onaylandı",
     },
     {
-      pnr: "MCF-4822",
-      tenantId: "FIRM-AKDENIZ",
-      tenantName: "Akdeniz Turizm A.Ş.",
-      agentUsername: "akdeniz_araci2",
-      agentName: "Selin Yıldız",
-      customerName: "Zeynep Demir",
-      customerPhone: "905554445566",
-      itemTitle: "Mersin - İstanbul 2+1 VIP Koltuk",
-      pax: 1,
-      date: "2026-11-24",
-      totalAmount: 1000,
-      commissionEarned: 150,
-      status: "Onaylandı",
-    },
-    {
       pnr: "MCF-4823",
       tenantId: "FIRM-ERDEMLI",
       tenantName: "Erdemli & Silifke Travel",
-      agentUsername: "erdemli_araci1",
+      agentUsername: "erdemli_alt1",
       agentName: "Deniz Koç",
       customerName: "Caner Özkan",
       customerPhone: "905557778899",
@@ -237,6 +343,7 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
+  // Rezervasyon Modal State'leri
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -244,6 +351,7 @@ export default function TurizmSaaSPanel() {
   const [travelDate, setTravelDate] = useState("2026-11-25");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
+  // Yeni Kontenjan Modal State'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("OTEL");
   const [newTitle, setNewTitle] = useState("");
@@ -252,68 +360,177 @@ export default function TurizmSaaSPanel() {
   const [newSellPrice, setNewSellPrice] = useState(1300);
   const [targetTenantId, setTargetTenantId] = useState("FIRM-AKDENIZ");
 
-  const tenants = [
-    {
-      id: "FIRM-AKDENIZ",
-      name: "Akdeniz Turizm A.Ş.",
-      ownerUser: "akdeniz_sahip",
-      plan: "Pro",
-      subAgents: 2,
-      revenue: "425.000 ₺",
-      status: "Aktif",
-    },
-    {
-      id: "FIRM-ERDEMLI",
-      name: "Erdemli & Silifke Travel",
-      ownerUser: "erdemli_sahip",
-      plan: "Basic",
-      subAgents: 1,
-      revenue: "148.000 ₺",
-      status: "Aktif",
-    },
-    {
-      id: "FIRM-CUKUROVA",
-      name: "Çukurova Express Acente",
-      ownerUser: "cukurova_sahip",
-      plan: "Trial",
-      subAgents: 1,
-      revenue: "34.500 ₺",
-      status: "Deneme",
-    },
-  ];
+  const chosenAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
 
-  const handleLogin = (e: React.FormEvent) => {
+  const getTenantPlan = (tenantId: string | null): PlanType => {
+    if (!tenantId) return "Pro";
+    return tenants.find((t) => t.id === tenantId)?.plan || "Trial";
+  };
+
+  const currentPlan: PlanType = currentUser
+    ? currentUser.role === "SUPER_ADMIN"
+      ? "Pro"
+      : getTenantPlan(currentUser.tenantId)
+    : "Trial";
+
+  const handlePasswordLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUser = loginUsername.trim().toLowerCase();
-    const found = USER_ACCOUNTS.find(
-      (acc) => acc.username.toLowerCase() === cleanUser && acc.password === loginPassword
-    );
+    if (!chosenAccount) return;
 
-    if (!found) {
-      setLoginError("Kullanıcı adı veya şifre hatalı. Lütfen kontrol edin.");
+    if (loginPassword !== chosenAccount.password) {
+      setLoginError(`"${chosenAccount.fullName}" hesabı için şifre hatalı.`);
       return;
     }
 
-    setCurrentUser(found);
+    setCurrentUser(chosenAccount);
+    setLoginPassword("");
     setLoginError("");
+    setLimitNotice("");
     setActiveTab("dashboard");
-    if (found.tenantId) {
-      setTargetTenantId(found.tenantId);
+    setMobileMenuOpen(false);
+    if (chosenAccount.tenantId) {
+      setNewSubTenantId(chosenAccount.tenantId);
+      setTargetTenantId(chosenAccount.tenantId);
+    } else if (tenants[0]) {
+      setNewSubTenantId(tenants[0].id);
+      setTargetTenantId(tenants[0].id);
     }
-  };
-
-  const quickFillLogin = (username: string, password: string) => {
-    setLoginUsername(username);
-    setLoginPassword(password);
-    setLoginError("");
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setLoginUsername("");
     setLoginPassword("");
+    setLoginError("");
+    setLimitNotice("");
     setSelectedItem(null);
     setIsAddModalOpen(false);
+    setMobileMenuOpen(false);
+  };
+
+  // Paket planını güncelleme (Super Admin için)
+  const handleChangeTenantPlan = (tenantId: string, nextPlan: PlanType) => {
+    if (!currentUser || currentUser.role !== "SUPER_ADMIN") return;
+    setTenants((prev) =>
+      prev.map((t) =>
+        t.id === tenantId
+          ? { ...t, plan: nextPlan, status: nextPlan === "Trial" ? "Deneme" : "Aktif" }
+          : t
+      )
+    );
+    setLimitNotice("");
+  };
+
+  // Ana Acente Ekle (Super Admin)
+  const handleAddTenantAgency = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || currentUser.role !== "SUPER_ADMIN") return;
+    if (!newAgencyName.trim() || !newAgencyOwnerName.trim()) return;
+
+    const slug = newAgencyName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
+    const tenantId = `FIRM-${slug || Math.floor(100 + Math.random() * 899)}`;
+    const ownerUsername = `${(slug || "firma").toLowerCase()}_ana_${Math.floor(
+      10 + Math.random() * 89
+    )}`;
+
+    const createdTenant: TenantAgency = {
+      id: tenantId,
+      name: newAgencyName.trim(),
+      plan: newAgencyPlan,
+      revenue: "0 ₺",
+      status: newAgencyPlan === "Trial" ? "Deneme" : "Aktif",
+    };
+
+    const createdOwner: UserAccount = {
+      id: `usr-${Date.now()}`,
+      username: ownerUsername,
+      password: newAgencyPassword || "123",
+      fullName: newAgencyOwnerName.trim(),
+      role: "TENANT_ADMIN",
+      tenantId,
+      tenantName: createdTenant.name,
+    };
+
+    setTenants([createdTenant, ...tenants]);
+    setAccounts([...accounts, createdOwner]);
+    setNewAgencyName("");
+    setNewAgencyOwnerName("");
+    setNewAgencyPassword("123");
+    setNewSubTenantId(tenantId);
+    setTargetTenantId(tenantId);
+  };
+
+  // Ana Acente Sil (Super Admin)
+  const handleRemoveTenantAgency = (tenantId: string) => {
+    if (!currentUser || currentUser.role !== "SUPER_ADMIN") return;
+    setTenants((prev) => prev.filter((t) => t.id !== tenantId));
+    setAccounts((prev) => prev.filter((a) => a.tenantId !== tenantId));
+    setInventory((prev) => prev.filter((i) => i.tenantId !== tenantId));
+    if (selectedAccountId && accounts.find((a) => a.id === selectedAccountId)?.tenantId === tenantId) {
+      setSelectedAccountId("usr-super");
+    }
+  };
+
+  // Alt Acente Ekle (Paket limit kontrollü)
+  const handleAddSubAgent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || currentUser.role === "SUB_AGENT") return;
+    if (!newSubFullName.trim()) return;
+
+    const effectiveTenantId =
+      currentUser.role === "SUPER_ADMIN" ? newSubTenantId : currentUser.tenantId;
+    if (!effectiveTenantId) return;
+
+    const parentTenant = tenants.find((t) => t.id === effectiveTenantId);
+    if (!parentTenant) return;
+
+    const existingSubsCount = accounts.filter(
+      (a) => a.role === "SUB_AGENT" && a.tenantId === parentTenant.id
+    ).length;
+    const maxSubs = PLAN_LIMITS[parentTenant.plan].maxSubAgents;
+
+    if (currentUser.role !== "SUPER_ADMIN" && existingSubsCount >= maxSubs) {
+      setLimitNotice(
+        `${parentTenant.name} (${parentTenant.plan} paket) alt acente limitine (${maxSubs}) ulaştı. Sınırsız alt acente için Pro pakete geçin.`
+      );
+      return;
+    }
+
+    setLimitNotice("");
+    const codeNum = Math.floor(10 + Math.random() * 89);
+    const newSub: UserAccount = {
+      id: `sub-${Date.now()}`,
+      username: `alt_${codeNum}`,
+      password: newSubPassword || "123",
+      fullName: newSubFullName.trim(),
+      role: "SUB_AGENT",
+      tenantId: parentTenant.id,
+      tenantName: parentTenant.name,
+      subAgentCode: `ALT-${codeNum}`,
+    };
+
+    setAccounts([...accounts, newSub]);
+    setNewSubFullName("");
+    setNewSubPassword("123");
+  };
+
+  // Alt Acente Çıkar
+  const handleRemoveSubAgent = (subId: string) => {
+    if (!currentUser || currentUser.role === "SUB_AGENT") return;
+    const target = accounts.find((a) => a.id === subId);
+    if (!target || target.role !== "SUB_AGENT") return;
+
+    if (currentUser.role === "TENANT_ADMIN" && target.tenantId !== currentUser.tenantId) {
+      return;
+    }
+
+    setAccounts((prev) => prev.filter((a) => a.id !== subId));
+    setLimitNotice("");
+    if (selectedAccountId === subId) {
+      setSelectedAccountId("usr-super");
+    }
   };
 
   const visibleInventory = currentUser
@@ -330,8 +547,34 @@ export default function TurizmSaaSPanel() {
       : bookings.filter((b) => b.agentUsername === currentUser.username)
     : [];
 
+  const visibleSubAgents = currentUser
+    ? currentUser.role === "SUPER_ADMIN"
+      ? accounts.filter((a) => a.role === "SUB_AGENT")
+      : accounts.filter((a) => a.role === "SUB_AGENT" && a.tenantId === currentUser.tenantId)
+    : [];
+
   const totalCommission = visibleBookings.reduce((acc, b) => acc + b.commissionEarned, 0);
   const calculatedNewCommission = Math.max(0, newSellPrice - newNetPrice);
+
+  // Yeni Kontenjan Modalını Açarken Paket Limitini Kontrol Et
+  const handleOpenAddInventoryModal = () => {
+    if (!currentUser || currentUser.role === "SUB_AGENT") return;
+    const activeTenantId =
+      currentUser.role === "SUPER_ADMIN" ? targetTenantId : currentUser.tenantId || tenants[0]?.id;
+    const plan = getTenantPlan(activeTenantId);
+    const currentTenantInventoryCount = inventory.filter((i) => i.tenantId === activeTenantId).length;
+    const limit = PLAN_LIMITS[plan].maxInventory;
+
+    if (currentUser.role !== "SUPER_ADMIN" && currentTenantInventoryCount >= limit) {
+      setLimitNotice(
+        `${currentUser.tenantName} (${plan} paket) kontenjan ekleme sınırına (${limit} adet) ulaştı. Daha fazla kontenjan eklemek için Pro pakete yükseltin.`
+      );
+      return;
+    }
+
+    setLimitNotice("");
+    setIsAddModalOpen(true);
+  };
 
   const handleAddInventory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,7 +582,19 @@ export default function TurizmSaaSPanel() {
     if (!newTitle.trim() || newQuota <= 0) return;
 
     const assignedTenantId =
-      currentUser.role === "SUPER_ADMIN" ? targetTenantId : currentUser.tenantId || "FIRM-AKDENIZ";
+      currentUser.role === "SUPER_ADMIN" ? targetTenantId : currentUser.tenantId || tenants[0]?.id;
+    const plan = getTenantPlan(assignedTenantId);
+    const currentTenantInventoryCount = inventory.filter((i) => i.tenantId === assignedTenantId).length;
+    const limit = PLAN_LIMITS[plan].maxInventory;
+
+    if (currentUser.role !== "SUPER_ADMIN" && currentTenantInventoryCount >= limit) {
+      setIsAddModalOpen(false);
+      setLimitNotice(
+        `${currentUser.tenantName} (${plan} paket) maksimum ${limit} kontenjan sınırına ulaştı. Pro pakete geçerek sınırsız ekleyebilirsiniz.`
+      );
+      return;
+    }
+
     const assignedTenantName =
       tenants.find((t) => t.id === assignedTenantId)?.name || currentUser.tenantName;
 
@@ -412,7 +667,7 @@ export default function TurizmSaaSPanel() {
 
   const sendWhatsAppVoucher = (b: BookingItem) => {
     const voucherText =
-      `*${b.tenantName} | RESMİ VOUCHER*\n` +
+      `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
       `----------------------------------\n` +
       `*PNR Kodu:* ${b.pnr}\n` +
       `*Misafir:* ${b.customerName}\n` +
@@ -422,7 +677,7 @@ export default function TurizmSaaSPanel() {
       `*Toplam Tutar:* ${b.totalAmount} ₺\n` +
       `*Durum:* ${b.status}\n` +
       `----------------------------------\n` +
-      `İyi yolculuklar ve iyi tatiller dileriz!`;
+      `MCF Technology & Software Solutions`;
 
     window.open(
       `https://wa.me/${b.customerPhone}?text=${encodeURIComponent(voucherText)}`,
@@ -433,46 +688,93 @@ export default function TurizmSaaSPanel() {
   // GİRİŞ EKRANI
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl bg-[#0e1422] border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl">
-          <div className="flex items-center gap-3.5 mb-6">
-            <div className="bg-indigo-600 p-3 rounded-2xl shadow-lg shadow-indigo-600/25">
-              <Building2 className="w-7 h-7 text-white" />
-            </div>
+      <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-3 sm:p-6">
+        <div className="w-full max-w-3xl bg-[#0e1422] border border-slate-800 rounded-3xl p-4 sm:p-8 shadow-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3.5 border-b border-slate-800 pb-5 mb-5">
+            <BrandLogo size="lg" />
             <div>
-              <h1 className="text-xl font-bold tracking-wide text-white">MCF B2B TURİZM PORTALI</h1>
+              <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
+                MCF B2B TURİZM PORTALI
+              </h1>
               <p className="text-xs text-slate-400">
-                Sistem Operatörü, Ana Acente (Wholesaler) ve Alt Acente (Sub-Agent) Girişi
+                Hesabınıza tıklayarak seçin ve sadece şifrenizi girerek oturum açın
               </p>
             </div>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Kullanıcı Adı</label>
-              <div className="flex items-center gap-2.5 bg-[#080c16] border border-slate-800 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
-                <User className="w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  required
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="Örn: superadmin, akdeniz_sahip, akdeniz_araci1"
-                  className="bg-transparent text-sm text-white w-full focus:outline-none"
-                />
-              </div>
+          <div className="mb-5">
+            <p className="text-xs font-semibold text-slate-300 mb-2.5">
+              1. Giriş Yapılacak Hesabı Seçin:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {accounts.map((acc) => {
+                const isSelected = acc.id === selectedAccountId;
+                const badgeText =
+                  acc.role === "SUPER_ADMIN"
+                    ? "Sistem Operatörü"
+                    : acc.role === "TENANT_ADMIN"
+                    ? "Ana Acente"
+                    : "Alt Acente";
+
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAccountId(acc.id);
+                      setLoginError("");
+                    }}
+                    className={`text-left rounded-2xl p-3 border transition cursor-pointer ${
+                      isSelected
+                        ? "bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-600/10"
+                        : "bg-[#080c16] border-slate-800 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          acc.role === "SUPER_ADMIN"
+                            ? "bg-amber-500/15 text-amber-300"
+                            : acc.role === "TENANT_ADMIN"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-indigo-500/15 text-indigo-300"
+                        }`}
+                      >
+                        {badgeText}
+                      </span>
+                      {isSelected && <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />}
+                    </div>
+                    <p className="text-sm font-bold text-white truncate">{acc.fullName}</p>
+                    <p className="text-[11px] text-slate-400 truncate mt-0.5">{acc.tenantName}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <form
+            onSubmit={handlePasswordLogin}
+            className="bg-[#080c16] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
+              <span className="text-slate-400">
+                Seçili Hesap: <strong className="text-white">{chosenAccount.fullName}</strong>
+              </span>
+              <span className="text-slate-500">
+                Varsayılan şifre: <code className="text-indigo-400">{chosenAccount.password}</code>
+              </span>
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Şifre</label>
-              <div className="flex items-center gap-2.5 bg-[#080c16] border border-slate-800 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
-                <Lock className="w-4 h-4 text-slate-500" />
+              <label className="block text-xs text-slate-400 mb-1.5">2. Şifre</label>
+              <div className="flex items-center gap-2.5 bg-[#0e1422] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
+                <Lock className="w-4 h-4 text-indigo-400 shrink-0" />
                 <input
                   type="password"
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Şifrenizi girin"
+                  placeholder="Sadece şifrenizi girin..."
                   className="bg-transparent text-sm text-white w-full focus:outline-none"
                 />
               </div>
@@ -488,53 +790,9 @@ export default function TurizmSaaSPanel() {
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <KeyRound className="w-4 h-4" /> B2B Paneline Giriş Yap
+              <KeyRound className="w-4 h-4" /> Seçili Hesapla Giriş Yap
             </button>
           </form>
-
-          {/* HIZLI TEST HESAPLARI */}
-          <div className="mt-7 pt-6 border-t border-slate-800">
-            <p className="text-xs font-semibold text-slate-300 mb-3">
-              Hızlı Test Hesapları (Tıkla ve Giriş Yap — Şifre: <span className="text-indigo-400 font-mono">123</span>)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-              <button
-                type="button"
-                onClick={() => quickFillLogin("superadmin", "123")}
-                className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
-              >
-                <span className="font-bold text-indigo-400 block">Sistem Operatörü (Super Admin)</span>
-                <span className="text-slate-400 font-mono">superadmin</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickFillLogin("akdeniz_sahip", "123")}
-                className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
-              >
-                <span className="font-bold text-emerald-400 block">Ana Acente / Wholesaler (Akdeniz)</span>
-                <span className="text-slate-400 font-mono">akdeniz_sahip</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickFillLogin("akdeniz_araci1", "123")}
-                className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
-              >
-                <span className="font-bold text-amber-400 block">Alt Acente / Sub-Agent (Mert Arslan)</span>
-                <span className="text-slate-400 font-mono">akdeniz_araci1</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickFillLogin("erdemli_sahip", "123")}
-                className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
-              >
-                <span className="font-bold text-sky-400 block">Ana Acente / Wholesaler (Erdemli)</span>
-                <span className="text-slate-400 font-mono">erdemli_sahip</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -547,45 +805,69 @@ export default function TurizmSaaSPanel() {
       ? "Ana Acente (Wholesaler)"
       : "Alt Acente (Sub-Agent)";
 
+  const hierarchyTenants =
+    currentUser.role === "SUPER_ADMIN"
+      ? tenants
+      : tenants.filter((t) => t.id === currentUser.tenantId);
+
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
-      {/* ÜST BAR */}
-      <header className="border-b border-slate-800/80 bg-[#0b101d] px-6 py-4 flex flex-col lg:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20">
-            <Building2 className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-wide text-white">MCF B2B TURİZM PORTALI</h1>
-            <p className="text-xs text-slate-400 flex items-center gap-1.5">
-              <Briefcase className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{currentUser.tenantName}</span>
+      {/* ÜST BAR (MOBİL MENÜ BUTONLU) */}
+      <header className="border-b border-slate-800/80 bg-[#0b101d] px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 sticky top-0 z-30">
+        <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="md:hidden bg-[#070b14] border border-slate-800 p-2 rounded-xl text-slate-200 hover:text-white shrink-0"
+            aria-label="Menüyü Aç/Kapat"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <BrandLogo size="md" />
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-lg font-bold tracking-wide text-white truncate">
+              MCF B2B TURİZM PORTALI
+            </h1>
+            <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5 truncate">
+              <Briefcase className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="truncate">{currentUser.tenantName}</span>
             </p>
           </div>
         </div>
 
-        {/* AKTİF KULLANICI BİLGİSİ & ÇIKIŞ */}
-        <div className="flex flex-wrap items-center gap-3 bg-[#070b14] border border-slate-800 px-3.5 py-2 rounded-2xl">
-          <div className="text-right">
+        <div className="flex items-center gap-2 sm:gap-3 bg-[#070b14] border border-slate-800 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl shrink-0">
+          <div className="text-right hidden sm:block">
             <p className="text-xs font-bold text-white">{currentUser.fullName}</p>
             <p className="text-[11px] text-indigo-400">
-              {roleLabel} • <span className="font-mono text-slate-400">@{currentUser.username}</span>
+              {roleLabel} • <span className={PLAN_LIMITS[currentPlan].badgeClass + " px-1.5 py-0.5 rounded border text-[10px]"}>{currentPlan}</span>
             </p>
           </div>
 
           <button
             onClick={handleLogout}
-            className="bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs font-medium px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+            className="bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs font-medium px-2.5 sm:px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" /> Çıkış Yap
+            <LogOut className="w-3.5 h-3.5" /> <span>Çıkış</span>
           </button>
         </div>
       </header>
 
       {/* ANA GÖVDE */}
-      <div className="flex-1 flex flex-col md:flex-row">
-        {/* SOL MENÜ */}
-        <aside className="w-full md:w-64 bg-[#0b101d]/70 border-r border-slate-800/80 p-4 flex flex-col gap-2">
+      <div className="flex-1 flex flex-col md:flex-row relative">
+        {/* SOL MENÜ (MASAÜSTÜ SABİT + MOBİL ÇEKMECE) */}
+        <aside
+          className={`${
+            mobileMenuOpen ? "flex" : "hidden"
+          } md:flex w-full md:w-64 bg-[#0b101d] md:bg-[#0b101d]/70 border-b md:border-b-0 md:border-r border-slate-800/80 p-4 flex-col gap-2 shrink-0`}
+        >
+          <div className="md:hidden pb-2 mb-1 border-b border-slate-800/80 flex items-center justify-between text-xs">
+            <span className="font-semibold text-white truncate">{currentUser.fullName}</span>
+            <span className={`px-2 py-0.5 rounded border text-[10px] ${PLAN_LIMITS[currentPlan].badgeClass}`}>
+              {currentPlan}
+            </span>
+          </div>
+
           <p className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mb-1">
             {currentUser.role === "SUPER_ADMIN"
               ? "PLATFORM YÖNETİMİ"
@@ -595,87 +877,160 @@ export default function TurizmSaaSPanel() {
           </p>
 
           <button
-            onClick={() => setActiveTab("dashboard")}
+            onClick={() => {
+              setActiveTab("dashboard");
+              setMobileMenuOpen(false);
+            }}
             className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
               activeTab === "dashboard"
                 ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
                 : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
             }`}
           >
-            <Calendar className="w-4 h-4" /> Kontenjan & B2B Satış
+            <Calendar className="w-4 h-4 shrink-0" /> Kontenjan & B2B Satış
           </button>
 
-          {currentUser.role === "SUPER_ADMIN" && (
+          <button
+            onClick={() => {
+              setActiveTab("hierarchy");
+              setMobileMenuOpen(false);
+            }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              activeTab === "hierarchy"
+                ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
+                : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+            }`}
+          >
+            <Network className="w-4 h-4 shrink-0" /> Acente Hiyerarşi Haritası
+          </button>
+
+          {currentUser.role !== "SUB_AGENT" && (
             <button
-              onClick={() => setActiveTab("tenants")}
+              onClick={() => {
+                setActiveTab("tenants");
+                setMobileMenuOpen(false);
+              }}
               className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
                 activeTab === "tenants"
                   ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
               }`}
             >
-              <ShieldCheck className="w-4 h-4" /> Ana Acenteler & Paketler
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                {currentUser.role === "SUPER_ADMIN" ? "Acente & Paket Yönetimi" : "Alt Acente Yönetimi"}
+              </span>
             </button>
           )}
 
           <button
-            onClick={() => setActiveTab("bookings")}
+            onClick={() => {
+              setActiveTab("bookings");
+              setMobileMenuOpen(false);
+            }}
             className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
               activeTab === "bookings"
                 ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
                 : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
             }`}
           >
-            <Users className="w-4 h-4" /> PNR Kayıtları & Voucher
+            <Users className="w-4 h-4 shrink-0" /> PNR Kayıtları & Voucher
           </button>
 
-          {/* SOL ALT KOMİSYON KARTI */}
-          <div className="mt-auto bg-[#0f1626] border border-slate-800 rounded-2xl p-4">
-            <p className="text-xs text-slate-400">
-              {currentUser.role === "SUB_AGENT"
-                ? "Net Komisyon Kazancım (Markup)"
-                : "Toplam Alt Acente Komisyonu"}
-            </p>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">+{totalCommission} ₺</p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {visibleBookings.length} adet onaylı rezervasyondan
-            </p>
+          <div className="mt-4 md:mt-auto space-y-3">
+            <div className="bg-[#0f1626] border border-slate-800 rounded-2xl p-3.5">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[11px] text-slate-400">Paket Durumu</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${PLAN_LIMITS[currentPlan].badgeClass}`}>
+                  {currentPlan}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">{PLAN_LIMITS[currentPlan].summary}</p>
+            </div>
+
+            <div className="bg-[#0f1626] border border-slate-800 rounded-2xl p-4">
+              <p className="text-xs text-slate-400">
+                {currentUser.role === "SUB_AGENT"
+                  ? "Net Komisyon Kazancım (Markup)"
+                  : "Toplam Alt Acente Komisyonu"}
+              </p>
+              <p className="text-2xl font-bold text-emerald-400 mt-1">+{totalCommission} ₺</p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {visibleBookings.length} adet onaylı rezervasyondan
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between bg-[#080c16] border border-slate-800/80 rounded-xl px-3 py-2">
+              <BrandLogo size="sm" />
+              <span className="text-[10px] text-slate-500 font-mono">v3.0 SaaS</span>
+            </div>
           </div>
         </aside>
 
         {/* SAĞ İÇERİK ALANI */}
-        <main className="flex-1 p-6 md:p-8 max-w-7xl">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full">
+          {/* PAKET LİMİT UYARISI */}
+          {limitNotice && (
+            <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-2.5 text-xs sm:text-sm text-amber-200">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                <span>{limitNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentUser.role === "SUPER_ADMIN") {
+                    setActiveTab("tenants");
+                  } else if (currentUser.tenantId) {
+                    handleChangeTenantPlan(currentUser.tenantId, "Pro");
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <Crown className="w-3.5 h-3.5" />
+                {currentUser.role === "SUPER_ADMIN" ? "Paketleri Yönet" : "Pro Pakete Yükselt"}
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* SEKME 1: KONTENJAN & B2B SATIŞ HAVUZU */}
           {activeTab === "dashboard" && (
             <div>
               <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white">Anlık Kontenjan ve B2B Satış Havuzu</h2>
-                  <p className="text-sm text-slate-400 mt-1">
+                  <h2 className="text-lg sm:text-xl font-bold text-white">
+                    Anlık Kontenjan ve B2B Satış Havuzu
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-1">
                     {currentUser.role === "SUPER_ADMIN"
                       ? "Tüm ana acentelere ait blok kontenjanları görüntülüyorsunuz."
-                      : `${currentUser.tenantName} tedarikçisine ait aktif blok kontenjanlar.`}
+                      : `${currentUser.tenantName} (${currentPlan} Paket) • Aktif kontenjan: ${visibleInventory.length}${
+                          Number.isFinite(PLAN_LIMITS[currentPlan].maxInventory)
+                            ? ` / ${PLAN_LIMITS[currentPlan].maxInventory}`
+                            : " / Sınırsız"
+                        }`}
                   </p>
                 </div>
 
                 {currentUser.role !== "SUB_AGENT" && (
                   <button
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition cursor-pointer shrink-0"
+                    onClick={handleOpenAddInventoryModal}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition cursor-pointer shrink-0"
                   >
                     <PackagePlus className="w-4 h-4" /> + Yeni Kontenjan Ekle
                   </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                 {visibleInventory.map((item) => (
                   <div
                     key={item.id}
-                    className="bg-[#0e1422] border border-slate-800/90 hover:border-indigo-500/40 rounded-2xl p-5 flex flex-col justify-between transition"
+                    className="bg-[#0e1422] border border-slate-800/90 hover:border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition"
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between gap-2 mb-2">
                         <span className="text-[11px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                           {item.category}
                         </span>
@@ -688,21 +1043,23 @@ export default function TurizmSaaSPanel() {
                         </span>
                       </div>
 
-                      <p className="text-[11px] text-slate-500 mb-1">Ana Acente: {item.tenantName}</p>
+                      <p className="text-[11px] text-slate-500 mb-1 truncate">
+                        Ana Acente: {item.tenantName}
+                      </p>
                       <h3 className="text-base font-bold text-white mb-4">{item.title}</h3>
 
                       <div className="bg-[#080c16] border border-slate-800/80 rounded-xl p-3.5 space-y-2 text-xs">
                         {currentUser.role !== "SUB_AGENT" && (
-                          <div className="flex justify-between">
+                          <div className="flex justify-between gap-2">
                             <span className="text-slate-400">Net Fiyat (Kontrat Rate):</span>
                             <span className="font-semibold text-white">{item.netPrice} ₺</span>
                           </div>
                         )}
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-400">Satış Fiyatı (Rack Rate):</span>
                           <span className="font-bold text-indigo-400">{item.sellPrice} ₺</span>
                         </div>
-                        <div className="border-t border-slate-800 pt-2 flex justify-between">
+                        <div className="border-t border-slate-800 pt-2 flex justify-between gap-2">
                           <span className="text-slate-400">Alt Acente Komisyonu (Markup):</span>
                           <span className="font-bold text-emerald-400">+{item.commission} ₺</span>
                         </div>
@@ -722,61 +1079,378 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 2: ANA ACENTELER & PAKETLER (SUPER ADMIN) */}
-          {activeTab === "tenants" && currentUser.role === "SUPER_ADMIN" && (
-            <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-5 border-b border-slate-800 flex justify-between items-center">
-                <div>
-                  <h2 className="text-lg font-bold text-white">Ana Acenteler (Wholesaler) & SaaS Paketleri</h2>
-                  <p className="text-xs text-slate-400">
-                    Platforma bağlı tüm tedarikçi acentelerin abonelik ve hacim durumu
-                  </p>
-                </div>
+          {/* SEKME 2: GÖRSEL ACENTE HİYERARŞİ HARİTASI / ŞEMASI */}
+          {activeTab === "hierarchy" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-white">
+                  Ana Acente & Alt Acente Hiyerarşi Haritası
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                  {currentUser.role === "SUPER_ADMIN"
+                    ? "Platformdaki tüm Ana Acente (Wholesaler) ve bağlı Alt Acente (Sub-Agent) ağacı."
+                    : currentUser.role === "TENANT_ADMIN"
+                    ? `${currentUser.tenantName} ana acentesine bağlı alt acente organizasyon şeması.`
+                    : "Bağlı olduğunuz Ana Acente ve hiyerarşik konumunuz."}
+                </p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
-                    <tr>
-                      <th className="p-4">Ana Acente (Tenant)</th>
-                      <th className="p-4">Yönetici Kullanıcı</th>
-                      <th className="p-4">SaaS Paketi</th>
-                      <th className="p-4">Alt Acente Ağı</th>
-                      <th className="p-4">Toplam Ciro</th>
-                      <th className="p-4">Durum</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {tenants.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-800/30">
-                        <td className="p-4 font-medium text-white">
-                          {t.name}
-                          <span className="block text-[11px] font-mono text-slate-500">{t.id}</span>
-                        </td>
-                        <td className="p-4 font-mono text-xs text-indigo-300">@{t.ownerUser}</td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-1 rounded-md text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            {t.plan}
+
+              {/* KÖK DÜĞÜM (SUPER ADMIN GÖRÜNÜMÜNDE) */}
+              {currentUser.role === "SUPER_ADMIN" && (
+                <div className="bg-[#0e1422] border border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-center justify-center shrink-0">
+                      <Crown className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                        KÖK DÜĞÜM • SİSTEM OPERATÖRÜ
+                      </span>
+                      <h3 className="text-sm sm:text-base font-bold text-white">
+                        MCF B2B Turizm Platformu
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <strong className="text-white">{tenants.length}</strong> Ana Acente •{" "}
+                    <strong className="text-emerald-400">
+                      {accounts.filter((a) => a.role === "SUB_AGENT").length}
+                    </strong>{" "}
+                    Alt Acente
+                  </div>
+                </div>
+              )}
+
+              {/* ANA ACENTE VE ALT ACENTE ŞEMA KARTLARI */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {hierarchyTenants.map((tenant) => {
+                  const owner = accounts.find(
+                    (a) => a.role === "TENANT_ADMIN" && a.tenantId === tenant.id
+                  );
+                  const subs = accounts.filter(
+                    (a) => a.role === "SUB_AGENT" && a.tenantId === tenant.id
+                  );
+                  const invCount = inventory.filter((i) => i.tenantId === tenant.id).length;
+
+                  return (
+                    <div
+                      key={tenant.id}
+                      className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4"
+                    >
+                      {/* ANA ACENTE KUTUSU */}
+                      <div className="bg-[#080c16] border border-emerald-500/30 rounded-2xl p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                            ANA ACENTE (WHOLESALER)
                           </span>
-                        </td>
-                        <td className="p-4 text-slate-300">{t.subAgents} Sub-Agent</td>
-                        <td className="p-4 font-semibold text-white">{t.revenue}</td>
-                        <td className="p-4 text-emerald-400 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4" /> {t.status}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              PLAN_LIMITS[tenant.plan].badgeClass
+                            }`}
+                          >
+                            {tenant.plan} Paket
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-white">{tenant.name}</h4>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Yönetici: <strong className="text-slate-200">{owner?.fullName || "Tanımlı"}</strong> • Kontenjan: {invCount}
+                        </p>
+                      </div>
+
+                      {/* BAĞLANTI ÇİZGİSİ & ALT ACENTELER */}
+                      <div className="pl-3 sm:pl-5 border-l-2 border-indigo-500/40 space-y-2.5">
+                        <p className="text-[11px] font-semibold text-indigo-300">
+                          Bağlı Alt Acenteler ({subs.length})
+                        </p>
+                        {subs.length === 0 ? (
+                          <p className="text-xs text-slate-500 bg-[#080c16] border border-slate-800/80 rounded-xl p-3">
+                            Bu ana acenteye henüz alt acente eklenmemiş.
+                          </p>
+                        ) : (
+                          subs.map((sub) => {
+                            const isCurrentSub =
+                              currentUser.role === "SUB_AGENT" && currentUser.id === sub.id;
+                            return (
+                              <div
+                                key={sub.id}
+                                className={`rounded-xl p-3 border flex items-center justify-between gap-2 ${
+                                  isCurrentSub
+                                    ? "bg-indigo-600/20 border-indigo-400"
+                                    : "bg-[#080c16] border-slate-800"
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-xs sm:text-sm font-semibold text-white truncate">
+                                    {sub.fullName}
+                                  </p>
+                                  <p className="text-[11px] text-slate-400 font-mono">
+                                    {sub.subAgentCode || "ALT"} • Sub-Agent
+                                  </p>
+                                </div>
+                                {isCurrentSub && (
+                                  <span className="text-[10px] font-bold bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded shrink-0">
+                                    Siz
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* SEKME 3: PNR KAYITLARI & VOUCHER */}
+          {/* SEKME 3: ACENTE, PAKET & ALT ACENTE YÖNETİMİ */}
+          {activeTab === "tenants" && currentUser.role !== "SUB_AGENT" && (
+            <div className="space-y-8">
+              {/* PAKET KARŞILAŞTIRMA & YETKİ ÖZETİ */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {(["Trial", "Basic", "Pro"] as PlanType[]).map((planKey) => (
+                  <div
+                    key={planKey}
+                    className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-white">{planKey} Sürüm</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${PLAN_LIMITS[planKey].badgeClass}`}>
+                        {planKey === "Trial" ? "Demo" : planKey === "Basic" ? "Standart" : "Tam Yetki"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">{PLAN_LIMITS[planKey].summary}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* SADECE SUPER ADMIN: ANA ACENTE EKLEME, PAKET SEÇİMİ & ÇIKARMA */}
+              {currentUser.role === "SUPER_ADMIN" && (
+                <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5">
+                  <div className="flex items-center gap-2.5">
+                    <Building className="w-5 h-5 text-indigo-400 shrink-0" />
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-white">
+                        Ana Acenteler (Wholesaler) & Paket Yönetimi
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Ana acente ekleyebilir, paketlerini (Trial / Basic / Pro) değiştirebilir veya çıkarabilirsiniz.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form
+                    onSubmit={handleAddTenantAgency}
+                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-[#080c16] border border-slate-800 p-4 rounded-2xl"
+                  >
+                    <input
+                      type="text"
+                      required
+                      value={newAgencyName}
+                      onChange={(e) => setNewAgencyName(e.target.value)}
+                      placeholder="Ana Acente Adı"
+                      className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      required
+                      value={newAgencyOwnerName}
+                      onChange={(e) => setNewAgencyOwnerName(e.target.value)}
+                      placeholder="Yönetici Ad Soyad"
+                      className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <select
+                        value={newAgencyPlan}
+                        onChange={(e) => setNewAgencyPlan(e.target.value as PlanType)}
+                        className="bg-[#0e1422] border border-slate-700 rounded-xl px-2.5 py-2.5 text-sm text-white focus:outline-none"
+                      >
+                        <option value="Trial">Trial</option>
+                        <option value="Basic">Basic</option>
+                        <option value="Pro">Pro</option>
+                      </select>
+                      <input
+                        type="text"
+                        required
+                        value={newAgencyPassword}
+                        onChange={(e) => setNewAgencyPassword(e.target.value)}
+                        placeholder="Şifre"
+                        className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Ana Acente Ekle
+                    </button>
+                  </form>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm min-w-[600px]">
+                      <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
+                        <tr>
+                          <th className="p-3.5">Ana Acente</th>
+                          <th className="p-3.5">Paket Değiştir</th>
+                          <th className="p-3.5">Ciro</th>
+                          <th className="p-3.5">Durum</th>
+                          <th className="p-3.5 text-right">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {tenants.map((t) => (
+                          <tr key={t.id} className="hover:bg-slate-800/30">
+                            <td className="p-3.5 font-medium text-white">
+                              {t.name}
+                              <span className="block text-[11px] font-mono text-slate-500">{t.id}</span>
+                            </td>
+                            <td className="p-3.5">
+                              <select
+                                value={t.plan}
+                                onChange={(e) =>
+                                  handleChangeTenantPlan(t.id, e.target.value as PlanType)
+                                }
+                                className="bg-[#080c16] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                              >
+                                <option value="Trial">Trial (Demo)</option>
+                                <option value="Basic">Basic</option>
+                                <option value="Pro">Pro (Tam)</option>
+                              </select>
+                            </td>
+                            <td className="p-3.5 font-semibold text-white">{t.revenue}</td>
+                            <td className="p-3.5 text-emerald-400">
+                              <span className="inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-4 h-4" /> {t.status}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button
+                                onClick={() => handleRemoveTenantAgency(t.id)}
+                                className="bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs px-3 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Çıkar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ALT ACENTE EKLEME & ÇIKARMA */}
+              <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <UserPlus className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-white">
+                        Alt Acente (Sub-Agent) Yönetimi
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        {currentUser.role === "SUPER_ADMIN"
+                          ? "Dilediğiniz ana acenteye alt acente ekleyebilir veya çıkarabilirsiniz."
+                          : `${currentUser.tenantName} (${currentPlan}) • Alt acente: ${visibleSubAgents.length}${
+                              Number.isFinite(PLAN_LIMITS[currentPlan].maxSubAgents)
+                                ? ` / ${PLAN_LIMITS[currentPlan].maxSubAgents}`
+                                : " / Sınırsız"
+                            }`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={handleAddSubAgent}
+                  className={`grid grid-cols-1 ${
+                    currentUser.role === "SUPER_ADMIN" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+                  } gap-3 bg-[#080c16] border border-slate-800 p-4 rounded-2xl`}
+                >
+                  {currentUser.role === "SUPER_ADMIN" && (
+                    <select
+                      value={newSubTenantId}
+                      onChange={(e) => setNewSubTenantId(e.target.value)}
+                      className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+                    >
+                      {tenants.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.plan})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <input
+                    type="text"
+                    required
+                    value={newSubFullName}
+                    onChange={(e) => setNewSubFullName(e.target.value)}
+                    placeholder="Alt Acente Ad Soyad / Firma"
+                    className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+                  />
+
+                  <input
+                    type="text"
+                    required
+                    value={newSubPassword}
+                    onChange={(e) => setNewSubPassword(e.target.value)}
+                    placeholder="Giriş Şifresi"
+                    className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+                  />
+
+                  <button
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Alt Acente Ekle
+                  </button>
+                </form>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm min-w-[540px]">
+                    <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
+                      <tr>
+                        <th className="p-3.5">Alt Acente</th>
+                        <th className="p-3.5">Bağlı Ana Acente</th>
+                        <th className="p-3.5">Kod</th>
+                        <th className="p-3.5 text-right">İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {visibleSubAgents.map((sub) => (
+                        <tr key={sub.id} className="hover:bg-slate-800/30">
+                          <td className="p-3.5 font-medium text-white">{sub.fullName}</td>
+                          <td className="p-3.5 text-slate-300">{sub.tenantName}</td>
+                          <td className="p-3.5 font-mono text-xs text-indigo-400">
+                            {sub.subAgentCode || "SUB"}
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <button
+                              onClick={() => handleRemoveSubAgent(sub.id)}
+                              className="bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs px-3 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Çıkar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SEKME 4: PNR KAYITLARI & VOUCHER */}
           {activeTab === "bookings" && (
             <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+              <div className="p-4 sm:p-5 border-b border-slate-800 flex justify-between items-center">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Kesilen PNR Kayıtları & Dijital Voucher</h2>
+                  <h2 className="text-base sm:text-lg font-bold text-white">
+                    Kesilen PNR Kayıtları & Dijital Voucher
+                  </h2>
                   <p className="text-xs text-slate-400">
                     {currentUser.role === "SUB_AGENT"
                       ? "Yalnızca kendi kestiğiniz PNR ve komisyon (markup) kayıtlarınız listelenmektedir."
@@ -785,7 +1459,7 @@ export default function TurizmSaaSPanel() {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm min-w-[680px]">
                   <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                     <tr>
                       <th className="p-4">PNR Kodu</th>
@@ -804,9 +1478,7 @@ export default function TurizmSaaSPanel() {
                         <td className="p-4 font-mono font-bold text-indigo-400">{b.pnr}</td>
                         <td className="p-4 text-xs">
                           <span className="font-semibold text-white block">{b.tenantName}</span>
-                          <span className="text-slate-400">
-                            {b.agentName} (@{b.agentUsername})
-                          </span>
+                          <span className="text-slate-400">{b.agentName}</span>
                         </td>
                         <td className="p-4 font-medium text-white">{b.customerName}</td>
                         <td className="p-4 text-slate-300">{b.itemTitle}</td>
@@ -818,7 +1490,7 @@ export default function TurizmSaaSPanel() {
                         <td className="p-4">
                           <button
                             onClick={() => sendWhatsAppVoucher(b)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition cursor-pointer"
                           >
                             <Send className="w-3.5 h-3.5" /> WhatsApp Voucher
                           </button>
@@ -836,7 +1508,7 @@ export default function TurizmSaaSPanel() {
       {/* YENİ KONTENJAN EKLEME MODALI */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
               <div className="flex items-center gap-2">
                 <PackagePlus className="w-5 h-5 text-emerald-400" />
@@ -861,14 +1533,14 @@ export default function TurizmSaaSPanel() {
                   >
                     {tenants.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.id})
+                        {t.name} ({t.plan})
                       </option>
                     ))}
                   </select>
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">Hizmet Kategorisi</label>
                   <select
@@ -909,7 +1581,7 @@ export default function TurizmSaaSPanel() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">Net Fiyat / Kontrat Rate (₺)</label>
                   <input
@@ -954,7 +1626,7 @@ export default function TurizmSaaSPanel() {
       {/* REZERVASYON & PNR OLUŞTURMA MODALI */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
               <div className="flex items-center gap-2">
                 <Ticket className="w-5 h-5 text-indigo-400" />
@@ -986,7 +1658,7 @@ export default function TurizmSaaSPanel() {
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">Misafir Adı Soyadı</label>
                   <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                    <User className="w-4 h-4 text-slate-500" />
+                    <User className="w-4 h-4 text-slate-500 shrink-0" />
                     <input
                       type="text"
                       required
@@ -1001,7 +1673,7 @@ export default function TurizmSaaSPanel() {
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">WhatsApp Telefon Numarası</label>
                   <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                    <Phone className="w-4 h-4 text-slate-500" />
+                    <Phone className="w-4 h-4 text-slate-500 shrink-0" />
                     <input
                       type="tel"
                       required
@@ -1013,7 +1685,7 @@ export default function TurizmSaaSPanel() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-slate-400 mb-1.5">Hizmet Tarihi</label>
                     <input
