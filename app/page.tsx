@@ -84,6 +84,7 @@ interface BookingItem {
 }
 
 interface PlanSpec {
+  monthlyAmount: number;
   priceLabel: string;
   periodLabel: string;
   badgeClass: string;
@@ -96,6 +97,7 @@ interface PlanSpec {
 
 const PLAN_SPECS: Record<PlanType, PlanSpec> = {
   Trial: {
+    monthlyAmount: 0,
     priceLabel: "14 Gün Ücretsiz",
     periodLabel: "Deneme",
     badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
@@ -111,6 +113,7 @@ const PLAN_SPECS: Record<PlanType, PlanSpec> = {
     ],
   },
   Basic: {
+    monthlyAmount: 3000,
     priceLabel: "3.000 TL",
     periodLabel: "/ Aylık",
     badgeClass: "bg-sky-500/15 text-sky-300 border-sky-500/30",
@@ -126,6 +129,7 @@ const PLAN_SPECS: Record<PlanType, PlanSpec> = {
     ],
   },
   Pro: {
+    monthlyAmount: 5000,
     priceLabel: "5.000 TL",
     periodLabel: "/ Aylık",
     badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
@@ -349,14 +353,12 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  // Tıklandığında açılan intro şifre form kutusu için aktif kullanıcı
   const [introAccount, setIntroAccount] = useState<UserAccount | null>(null);
   const [loginPassword, setLoginPassword] = useState("");
   const [superPassword, setSuperPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
 
-  // Yeni şifre belirleme adımı
   const [showNewPasswordScreen, setShowNewPasswordScreen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState("");
   const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
@@ -725,7 +727,16 @@ export default function TurizmSaaSPanel() {
       : accounts.filter((a) => a.role === "SUB_AGENT" && a.tenantId === currentUser.tenantId)
     : [];
 
-  const totalCommission = visibleBookings.reduce((acc, b) => acc + b.commissionEarned, 0);
+  // Süper admin sadece paketlerden kazanır; işletme ve bağlı hesap kendi satış komisyonunu görür
+  const totalSubscriptionIncome = tenants.reduce(
+    (sum, t) => sum + PLAN_SPECS[t.plan].monthlyAmount,
+    0
+  );
+  const totalAgentCommission = visibleBookings.reduce(
+    (acc, b) => acc + b.commissionEarned,
+    0
+  );
+
   const calculatedNewCommission = Math.max(0, newSellPrice - newNetPrice);
 
   const handleOpenAddInventoryModal = () => {
@@ -1246,10 +1257,10 @@ export default function TurizmSaaSPanel() {
     );
   }
 
-  const hierarchyTenants =
-    currentUser.role === "SUPER_ADMIN"
-      ? tenants
-      : tenants.filter((t) => t.id === currentUser.tenantId);
+  const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
+  const hierarchyTenants = isSuperAdmin
+    ? tenants
+    : tenants.filter((t) => t.id === currentUser.tenantId);
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
@@ -1366,14 +1377,18 @@ export default function TurizmSaaSPanel() {
 
           <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-slate-400">Komisyon</span>
+              <span className="text-[11px] text-slate-400">
+                {isSuperAdmin ? "Paket Geliri" : "Komisyon"}
+              </span>
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded border ${PLAN_SPECS[currentPlan].badgeClass}`}
               >
-                {currentPlan}
+                {isSuperAdmin ? "SaaS" : currentPlan}
               </span>
             </div>
-            <p className="text-lg font-bold text-emerald-400 mt-0.5">+{totalCommission} ₺</p>
+            <p className="text-lg font-bold text-emerald-400 mt-0.5">
+              +{isSuperAdmin ? totalSubscriptionIncome.toLocaleString("tr-TR") : totalAgentCommission} ₺
+            </p>
           </div>
         </aside>
 
@@ -1388,7 +1403,7 @@ export default function TurizmSaaSPanel() {
               <button
                 type="button"
                 onClick={() => {
-                  if (currentUser.role === "SUPER_ADMIN") {
+                  if (isSuperAdmin) {
                     setActiveTab("tenants");
                   } else if (currentUser.tenantId) {
                     handleChangeTenantPlan(currentUser.tenantId, "Pro");
@@ -1471,10 +1486,12 @@ export default function TurizmSaaSPanel() {
                             <span className="text-slate-400">Satış:</span>
                             <span className="font-bold text-indigo-400">{item.sellPrice} ₺</span>
                           </div>
-                          <div className="border-t border-slate-800 pt-2 flex justify-between gap-2">
-                            <span className="text-slate-400">Komisyon:</span>
-                            <span className="font-bold text-emerald-400">+{item.commission} ₺</span>
-                          </div>
+                          {!isSuperAdmin && (
+                            <div className="border-t border-slate-800 pt-2 flex justify-between gap-2">
+                              <span className="text-slate-400">Komisyon:</span>
+                              <span className="font-bold text-emerald-400">+{item.commission} ₺</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1501,7 +1518,7 @@ export default function TurizmSaaSPanel() {
                 <h2 className="text-lg sm:text-xl font-bold text-white">Hiyerarşi</h2>
               </div>
 
-              {currentUser.role === "SUPER_ADMIN" && (
+              {isSuperAdmin && (
                 <div className="bg-amber-500/15 border border-amber-400/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-amber-500/25 text-amber-200 flex items-center justify-center shrink-0">
@@ -1621,7 +1638,7 @@ export default function TurizmSaaSPanel() {
                 ))}
               </div>
 
-              {currentUser.role === "SUPER_ADMIN" && (
+              {isSuperAdmin && (
                 <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5">
                   <div className="flex items-center gap-2.5">
                     <Building className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -1683,7 +1700,7 @@ export default function TurizmSaaSPanel() {
                         <tr>
                           <th className="p-3.5">Acente</th>
                           <th className="p-3.5">Paket</th>
-                          <th className="p-3.5">Ciro</th>
+                          <th className="p-3.5">Paket Ücreti</th>
                           <th className="p-3.5">Durum</th>
                           <th className="p-3.5 text-right">İşlem</th>
                         </tr>
@@ -1708,7 +1725,9 @@ export default function TurizmSaaSPanel() {
                                 <option value="Pro">Pro (5.000 TL / Ay)</option>
                               </select>
                             </td>
-                            <td className="p-3.5 font-semibold text-white">{t.revenue}</td>
+                            <td className="p-3.5 font-semibold text-emerald-400">
+                              {PLAN_SPECS[t.plan].monthlyAmount.toLocaleString("tr-TR")} ₺
+                            </td>
                             <td className="p-3.5 text-emerald-400">
                               <span className="inline-flex items-center gap-1">
                                 <CheckCircle2 className="w-4 h-4" /> {t.status}
@@ -1739,10 +1758,10 @@ export default function TurizmSaaSPanel() {
                 <form
                   onSubmit={handleAddSubAgent}
                   className={`grid grid-cols-1 ${
-                    currentUser.role === "SUPER_ADMIN" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+                    isSuperAdmin ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
                   } gap-3 bg-[#080c16] border border-slate-800 p-4 rounded-2xl`}
                 >
-                  {currentUser.role === "SUPER_ADMIN" && (
+                  {isSuperAdmin && (
                     <select
                       value={newSubTenantId}
                       onChange={(e) => setNewSubTenantId(e.target.value)}
@@ -1833,7 +1852,7 @@ export default function TurizmSaaSPanel() {
                       <th className="p-4">Hizmet</th>
                       <th className="p-4">Tarih / Kişi</th>
                       <th className="p-4">Tutar</th>
-                      <th className="p-4">Komisyon</th>
+                      {!isSuperAdmin && <th className="p-4">Komisyon</th>}
                       <th className="p-4">İşlem</th>
                     </tr>
                   </thead>
@@ -1851,7 +1870,9 @@ export default function TurizmSaaSPanel() {
                           {b.date} • {b.pax}
                         </td>
                         <td className="p-4 font-semibold text-white">{b.totalAmount} ₺</td>
-                        <td className="p-4 font-bold text-emerald-400">+{b.commissionEarned} ₺</td>
+                        {!isSuperAdmin && (
+                          <td className="p-4 font-bold text-emerald-400">+{b.commissionEarned} ₺</td>
+                        )}
                         <td className="p-4">
                           <button
                             onClick={() => sendWhatsAppVoucher(b)}
@@ -1888,7 +1909,7 @@ export default function TurizmSaaSPanel() {
             </div>
 
             <form onSubmit={handleAddInventory} className="space-y-4">
-              {currentUser.role === "SUPER_ADMIN" && (
+              {isSuperAdmin && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">Acente</label>
                   <select
@@ -2078,12 +2099,14 @@ export default function TurizmSaaSPanel() {
                     <p className="text-xs text-slate-400">Tutar</p>
                     <p className="text-lg font-bold text-white">{selectedItem.sellPrice * paxCount} ₺</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">Komisyon</p>
-                    <p className="text-sm font-bold text-emerald-400">
-                      +{selectedItem.commission * paxCount} ₺
-                    </p>
-                  </div>
+                  {!isSuperAdmin && (
+                    <div className="text-right">
+                      <p className="text-xs text-slate-400">Komisyon</p>
+                      <p className="text-sm font-bold text-emerald-400">
+                        +{selectedItem.commission * paxCount} ₺
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <button
