@@ -110,20 +110,26 @@ const PLAN_LIMITS: Record<
 function BrandLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const [imgError, setImgError] = useState(false);
 
-  const heightClass =
+  const dims =
     size === "lg"
-      ? "h-14 sm:h-16"
+      ? "w-20 h-14 sm:w-24 sm:h-16"
       : size === "sm"
-      ? "h-6"
-      : "h-9 sm:h-10";
+      ? "w-11 h-7"
+      : "w-14 h-10";
 
   if (imgError) {
     return (
-      <div className="inline-flex items-center gap-1.5 select-none">
-        <span className="font-black tracking-tight text-amber-400 text-base">MCF</span>
-        <span className="text-[11px] font-semibold tracking-wider text-purple-300 uppercase">
-          B2B
+      <div
+        className={`${dims} rounded-xl bg-gradient-to-br from-purple-950 via-[#12162b] to-amber-950/60 border border-purple-400/40 flex flex-col items-center justify-center px-2 select-none shrink-0 shadow-inner`}
+      >
+        <span className="font-black tracking-tight text-xs sm:text-sm leading-none bg-gradient-to-r from-purple-300 via-amber-300 to-purple-300 bg-clip-text text-transparent">
+          MCF
         </span>
+        {size !== "sm" && (
+          <span className="text-[7px] font-bold tracking-widest text-amber-200/80 uppercase mt-0.5 leading-none">
+            SOFTWARE
+          </span>
+        )}
       </div>
     );
   }
@@ -133,7 +139,7 @@ function BrandLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
       src="/logo.png"
       alt="MCF Technology & Software Solutions"
       onError={() => setImgError(true)}
-      className={`${heightClass} w-auto object-contain rounded-lg select-none shrink-0`}
+      className={`${dims} object-cover rounded-xl border border-purple-400/30 bg-[#080c16] select-none shrink-0`}
     />
   );
 }
@@ -168,7 +174,7 @@ export default function TurizmSaaSPanel() {
       id: "usr-super",
       username: "superadmin",
       password: "123",
-      fullName: "Mehmet Cihan • Sistem Operatörü",
+      fullName: "Mehmet Cihan • Süper Admin",
       role: "SUPER_ADMIN",
       tenantId: null,
       tenantName: "MCF B2B Turizm Altyapısı",
@@ -181,6 +187,24 @@ export default function TurizmSaaSPanel() {
       role: "TENANT_ADMIN",
       tenantId: "FIRM-AKDENIZ",
       tenantName: "Akdeniz Turizm A.Ş.",
+    },
+    {
+      id: "usr-erdemli-owner",
+      username: "erdemli_ana",
+      password: "123",
+      fullName: "Kemal Doğan",
+      role: "TENANT_ADMIN",
+      tenantId: "FIRM-ERDEMLI",
+      tenantName: "Erdemli & Silifke Travel",
+    },
+    {
+      id: "usr-demo-owner",
+      username: "demo_ana",
+      password: "123",
+      fullName: "Ece Demir",
+      role: "TENANT_ADMIN",
+      tenantId: "FIRM-DEMO",
+      tenantName: "Mersin Demo Acente",
     },
     {
       id: "usr-akdeniz-sub1",
@@ -203,15 +227,6 @@ export default function TurizmSaaSPanel() {
       subAgentCode: "ALT-02",
     },
     {
-      id: "usr-erdemli-owner",
-      username: "erdemli_ana",
-      password: "123",
-      fullName: "Kemal Doğan",
-      role: "TENANT_ADMIN",
-      tenantId: "FIRM-ERDEMLI",
-      tenantName: "Erdemli & Silifke Travel",
-    },
-    {
       id: "usr-erdemli-sub1",
       username: "erdemli_alt1",
       password: "123",
@@ -220,15 +235,6 @@ export default function TurizmSaaSPanel() {
       tenantId: "FIRM-ERDEMLI",
       tenantName: "Erdemli & Silifke Travel",
       subAgentCode: "ERD-01",
-    },
-    {
-      id: "usr-demo-owner",
-      username: "demo_ana",
-      password: "123",
-      fullName: "Ece Demir",
-      role: "TENANT_ADMIN",
-      tenantId: "FIRM-DEMO",
-      tenantName: "Mersin Demo Acente",
     },
     {
       id: "usr-demo-sub1",
@@ -674,84 +680,74 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // HİYERARŞİK GİRİŞ EKRANI
+  // RENKLİ KARTLI GİRİŞ EKRANI (SARI: SUPER ADMIN, YEŞİL: ANA ACENTE, MAVİ: ALT ACENTE)
   if (!currentUser) {
-    const superAdmins = accounts.filter((a) => a.role === "SUPER_ADMIN");
-    const tenantAdmins = accounts.filter((a) => a.role === "TENANT_ADMIN");
-    const subAgents = accounts.filter((a) => a.role === "SUB_AGENT");
+    const getRoleCardStyle = (role: UserRole, isSelected: boolean) => {
+      if (role === "SUPER_ADMIN") {
+        return isSelected
+          ? "bg-amber-500/35 border-amber-300 text-amber-50 ring-2 ring-amber-300/60"
+          : "bg-amber-500/20 border-amber-400/50 text-amber-100 hover:bg-amber-500/30";
+      }
+      if (role === "TENANT_ADMIN") {
+        return isSelected
+          ? "bg-emerald-500/35 border-emerald-300 text-emerald-50 ring-2 ring-emerald-300/60"
+          : "bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30";
+      }
+      return isSelected
+        ? "bg-sky-500/35 border-sky-300 text-sky-50 ring-2 ring-sky-300/60"
+        : "bg-sky-500/20 border-sky-400/50 text-sky-100 hover:bg-sky-500/30";
+    };
 
-    const renderAccountCard = (acc: UserAccount) => {
-      const isSelected = acc.id === selectedAccountId;
-      return (
-        <button
-          key={acc.id}
-          type="button"
-          onClick={() => {
-            setSelectedAccountId(acc.id);
-            setLoginError("");
-          }}
-          className={`text-left rounded-xl p-3 border transition cursor-pointer ${
-            isSelected
-              ? "bg-indigo-600/20 border-indigo-400 ring-1 ring-indigo-400/50"
-              : "bg-[#080c16] border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-white truncate">{acc.fullName}</p>
-            {isSelected && <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />}
-          </div>
-          <p className="text-[11px] text-slate-400 truncate mt-0.5">{acc.tenantName}</p>
-        </button>
-      );
+    const getRoleTag = (role: UserRole) => {
+      if (role === "SUPER_ADMIN") return "Süper Admin";
+      if (role === "TENANT_ADMIN") return "Ana Acente";
+      return "Alt Acente";
     };
 
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-3 sm:p-6">
         <div className="w-full max-w-3xl bg-[#0e1422] border border-slate-800/90 rounded-3xl p-5 sm:p-8 shadow-2xl space-y-6">
           {/* ÜST BAŞLIK & LOGO */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-            <div className="flex items-center gap-3.5">
-              <BrandLogo size="lg" />
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
-                  MCF B2B TURİZM PORTALI
-                </h1>
-                <p className="text-xs text-slate-400">
-                  Hiyerarşiden hesabınızı seçin ve sadece şifrenizi girin
-                </p>
-              </div>
+          <div className="flex items-center gap-3.5 border-b border-slate-800 pb-5">
+            <BrandLogo size="lg" />
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
+                MCF B2B TURİZM PORTALI
+              </h1>
+              <p className="text-xs text-slate-400">
+                Kartınıza tıklayın ve sadece şifrenizi girin
+              </p>
             </div>
           </div>
 
-          {/* HİYERARŞİK HESAP SEÇİMİ */}
-          <div className="space-y-4">
-            {/* 1. KATMAN: SİSTEM OPERATÖRÜ */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-amber-400">
-                <Crown className="w-3.5 h-3.5" /> 1. Katman • Sistem Operatörü (Super Admin)
-              </div>
-              <div className="grid grid-cols-1 gap-2">{superAdmins.map(renderAccountCard)}</div>
-            </div>
-
-            {/* 2. KATMAN: ANA ACENTELER */}
-            <div className="space-y-2 pl-2 sm:pl-4 border-l-2 border-emerald-500/30">
-              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-400">
-                <Building className="w-3.5 h-3.5" /> 2. Katman • Ana Acenteler (Wholesaler)
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {tenantAdmins.map(renderAccountCard)}
-              </div>
-            </div>
-
-            {/* 3. KATMAN: ALT ACENTELER */}
-            <div className="space-y-2 pl-4 sm:pl-8 border-l-2 border-indigo-500/30">
-              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-indigo-400">
-                <Users className="w-3.5 h-3.5" /> 3. Katman • Alt Acenteler (Sub-Agent)
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {subAgents.map(renderAccountCard)}
-              </div>
-            </div>
+          {/* RENKLİ HESAP DİVLERİ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {accounts.map((acc) => {
+              const isSelected = acc.id === selectedAccountId;
+              return (
+                <button
+                  key={acc.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedAccountId(acc.id);
+                    setLoginError("");
+                  }}
+                  className={`text-left rounded-2xl p-3.5 border transition cursor-pointer ${getRoleCardStyle(
+                    acc.role,
+                    isSelected
+                  )}`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider opacity-90">
+                      {getRoleTag(acc.role)}
+                    </span>
+                    {isSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                  </div>
+                  <p className="text-sm font-bold truncate">{acc.fullName}</p>
+                  <p className="text-[11px] opacity-80 truncate mt-0.5">{acc.tenantName}</p>
+                </button>
+              );
+            })}
           </div>
 
           {/* SADECE ŞİFRE GİRİŞ FORMU */}
@@ -800,7 +796,7 @@ export default function TurizmSaaSPanel() {
 
   const roleLabel =
     currentUser.role === "SUPER_ADMIN"
-      ? "Sistem Operatörü"
+      ? "Süper Admin"
       : currentUser.role === "TENANT_ADMIN"
       ? "Ana Acente"
       : "Alt Acente";
@@ -856,89 +852,74 @@ export default function TurizmSaaSPanel() {
         <aside
           className={`${
             mobileMenuOpen ? "flex" : "hidden"
-          } md:flex w-full md:w-60 bg-[#0b101d] md:bg-[#0b101d]/70 border-b md:border-b-0 md:border-r border-slate-800/80 p-4 flex-col justify-between gap-6 shrink-0`}
+          } md:flex w-full md:w-56 bg-[#0b101d] md:bg-[#0b101d]/70 border-b md:border-b-0 md:border-r border-slate-800/80 p-4 flex-col justify-between gap-6 shrink-0`}
         >
-          <div className="space-y-5">
-            <div>
-              <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase px-3 mb-2">
-                OPERASYON
-              </p>
-              <div className="space-y-1">
-                <button
-                  onClick={() => {
-                    setActiveTab("dashboard");
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                    activeTab === "dashboard"
-                      ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                  }`}
-                >
-                  <Calendar className="w-4 h-4 shrink-0" /> Kontenjan & Satış
-                </button>
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                setActiveTab("dashboard");
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+                activeTab === "dashboard"
+                  ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
+                  : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+              }`}
+            >
+              <Calendar className="w-4 h-4 shrink-0" /> Kontenjan & Satış
+            </button>
 
-                <button
-                  onClick={() => {
-                    setActiveTab("bookings");
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                    activeTab === "bookings"
-                      ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                  }`}
-                >
-                  <Users className="w-4 h-4 shrink-0" /> PNR & Voucher
-                </button>
-              </div>
-            </div>
+            <button
+              onClick={() => {
+                setActiveTab("bookings");
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+                activeTab === "bookings"
+                  ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
+                  : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0" /> PNR & Voucher
+            </button>
 
-            <div>
-              <p className="text-[10px] font-bold tracking-wider text-slate-500 uppercase px-3 mb-2">
-                ORGANİZASYON
-              </p>
-              <div className="space-y-1">
-                <button
-                  onClick={() => {
-                    setActiveTab("hierarchy");
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                    activeTab === "hierarchy"
-                      ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
-                      : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                  }`}
-                >
-                  <Network className="w-4 h-4 shrink-0" /> Hiyerarşi Haritası
-                </button>
+            <button
+              onClick={() => {
+                setActiveTab("hierarchy");
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+                activeTab === "hierarchy"
+                  ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
+                  : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+              }`}
+            >
+              <Network className="w-4 h-4 shrink-0" /> Hiyerarşi
+            </button>
 
-                {currentUser.role !== "SUB_AGENT" && (
-                  <button
-                    onClick={() => {
-                      setActiveTab("tenants");
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                      activeTab === "tenants"
-                        ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
-                        : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                    }`}
-                  >
-                    <ShieldCheck className="w-4 h-4 shrink-0" />
-                    <span className="truncate">
-                      {currentUser.role === "SUPER_ADMIN" ? "Acente & Paketler" : "Alt Acenteler"}
-                    </span>
-                  </button>
-                )}
-              </div>
-            </div>
+            {currentUser.role !== "SUB_AGENT" && (
+              <button
+                onClick={() => {
+                  setActiveTab("tenants");
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+                  activeTab === "tenants"
+                    ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30"
+                    : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span className="truncate">
+                  {currentUser.role === "SUPER_ADMIN" ? "Acente & Paket" : "Alt Acenteler"}
+                </span>
+              </button>
+            )}
           </div>
 
-          {/* TEK VE SADE KOMİSYON ÖZETİ */}
           <div className="bg-[#0f1626] border border-slate-800 rounded-2xl p-4">
             <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-xs text-slate-400">Net Komisyon</span>
+              <span className="text-xs text-slate-400">Komisyon</span>
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded border ${PLAN_LIMITS[currentPlan].badgeClass}`}
               >
@@ -946,7 +927,6 @@ export default function TurizmSaaSPanel() {
               </span>
             </div>
             <p className="text-2xl font-bold text-emerald-400">+{totalCommission} ₺</p>
-            <p className="text-[11px] text-slate-500 mt-1">{visibleBookings.length} satış kaydı</p>
           </div>
         </aside>
 
@@ -987,7 +967,7 @@ export default function TurizmSaaSPanel() {
                   <p className="text-xs sm:text-sm text-slate-400 mt-1">
                     {currentUser.role === "SUPER_ADMIN"
                       ? "Tüm ana acentelere ait blok kontenjanlar."
-                      : `${currentUser.tenantName} (${currentPlan} Paket) • ${PLAN_LIMITS[currentPlan].summary}`}
+                      : `${currentUser.tenantName} (${currentPlan}) • ${PLAN_LIMITS[currentPlan].summary}`}
                   </p>
                 </div>
 
@@ -1063,31 +1043,28 @@ export default function TurizmSaaSPanel() {
                   Ana Acente & Alt Acente Hiyerarşi Haritası
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                  Yetki alanınızdaki organizasyon ve alt acente dağılımı.
+                  Organizasyon ve alt acente yapısı.
                 </p>
               </div>
 
               {currentUser.role === "SUPER_ADMIN" && (
-                <div className="bg-[#0e1422] border border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="bg-amber-500/15 border border-amber-400/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/25 text-amber-200 flex items-center justify-center shrink-0">
                       <Crown className="w-5 h-5" />
                     </div>
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                        SİSTEM OPERATÖRÜ
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                        SÜPER ADMİN
                       </span>
                       <h3 className="text-sm sm:text-base font-bold text-white">
                         MCF B2B Turizm Platformu
                       </h3>
                     </div>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    <strong className="text-white">{tenants.length}</strong> Ana Acente •{" "}
-                    <strong className="text-emerald-400">
-                      {accounts.filter((a) => a.role === "SUB_AGENT").length}
-                    </strong>{" "}
-                    Alt Acente
+                  <div className="text-xs text-amber-100/90">
+                    <strong>{tenants.length}</strong> Ana Acente •{" "}
+                    <strong>{accounts.filter((a) => a.role === "SUB_AGENT").length}</strong> Alt Acente
                   </div>
                 </div>
               )}
@@ -1107,10 +1084,10 @@ export default function TurizmSaaSPanel() {
                       key={tenant.id}
                       className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4"
                     >
-                      <div className="bg-[#080c16] border border-emerald-500/30 rounded-2xl p-4">
+                      <div className="bg-emerald-500/15 border border-emerald-400/40 rounded-2xl p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                            ANA ACENTE (WHOLESALER)
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                            ANA ACENTE
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
@@ -1121,14 +1098,15 @@ export default function TurizmSaaSPanel() {
                           </span>
                         </div>
                         <h4 className="text-base font-bold text-white">{tenant.name}</h4>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Yönetici: <strong className="text-slate-200">{owner?.fullName || "Tanımlı"}</strong> • Kontenjan: {invCount}
+                        <p className="text-xs text-emerald-100/80 mt-1">
+                          Yönetici: <strong>{owner?.fullName || "Tanımlı"}</strong> • Kontenjan:{" "}
+                          {invCount}
                         </p>
                       </div>
 
-                      <div className="pl-3 sm:pl-5 border-l-2 border-indigo-500/40 space-y-2.5">
-                        <p className="text-[11px] font-semibold text-indigo-300">
-                          Bağlı Alt Acenteler ({subs.length})
+                      <div className="pl-3 sm:pl-5 border-l-2 border-sky-400/40 space-y-2.5">
+                        <p className="text-[11px] font-semibold text-sky-300">
+                          Alt Acenteler ({subs.length})
                         </p>
                         {subs.length === 0 ? (
                           <p className="text-xs text-slate-500 bg-[#080c16] border border-slate-800/80 rounded-xl p-3">
@@ -1143,20 +1121,20 @@ export default function TurizmSaaSPanel() {
                                 key={sub.id}
                                 className={`rounded-xl p-3 border flex items-center justify-between gap-2 ${
                                   isCurrentSub
-                                    ? "bg-indigo-600/20 border-indigo-400"
-                                    : "bg-[#080c16] border-slate-800"
+                                    ? "bg-sky-500/30 border-sky-300 ring-1 ring-sky-300/60"
+                                    : "bg-sky-500/15 border-sky-400/35"
                                 }`}
                               >
                                 <div className="min-w-0">
-                                  <p className="text-xs sm:text-sm font-semibold text-white truncate">
+                                  <p className="text-xs sm:text-sm font-semibold text-sky-50 truncate">
                                     {sub.fullName}
                                   </p>
-                                  <p className="text-[11px] text-slate-400 font-mono">
-                                    {sub.subAgentCode || "ALT"} • Sub-Agent
+                                  <p className="text-[11px] text-sky-200/80 font-mono">
+                                    {sub.subAgentCode || "ALT"}
                                   </p>
                                 </div>
                                 {isCurrentSub && (
-                                  <span className="text-[10px] font-bold bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded shrink-0">
+                                  <span className="text-[10px] font-bold bg-sky-400/25 text-sky-100 px-2 py-0.5 rounded shrink-0">
                                     Siz
                                   </span>
                                 )}
@@ -1197,13 +1175,13 @@ export default function TurizmSaaSPanel() {
               {currentUser.role === "SUPER_ADMIN" && (
                 <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5">
                   <div className="flex items-center gap-2.5">
-                    <Building className="w-5 h-5 text-indigo-400 shrink-0" />
+                    <Building className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div>
                       <h2 className="text-base sm:text-lg font-bold text-white">
-                        Ana Acenteler (Wholesaler) & Paket Yönetimi
+                        Ana Acente & Paket Yönetimi
                       </h2>
                       <p className="text-xs text-slate-400">
-                        Ana acente ekleyebilir, paket değiştirebilir veya çıkarabilirsiniz.
+                        Ana acente ekleyin, paket değiştirin veya çıkarın.
                       </p>
                     </div>
                   </div>
@@ -1310,14 +1288,12 @@ export default function TurizmSaaSPanel() {
 
               <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-5">
                 <div className="flex items-center gap-2.5">
-                  <UserPlus className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <UserPlus className="w-5 h-5 text-sky-400 shrink-0" />
                   <div>
-                    <h2 className="text-base sm:text-lg font-bold text-white">
-                      Alt Acente (Sub-Agent) Yönetimi
-                    </h2>
+                    <h2 className="text-base sm:text-lg font-bold text-white">Alt Acente Yönetimi</h2>
                     <p className="text-xs text-slate-400">
                       {currentUser.role === "SUPER_ADMIN"
-                        ? "İstediğiniz ana acenteye alt acente ekleyebilir veya çıkarabilirsiniz."
+                        ? "İstediğiniz ana acenteye alt acente ekleyin veya çıkarın."
                         : `${currentUser.tenantName} (${currentPlan}) • ${PLAN_LIMITS[currentPlan].summary}`}
                     </p>
                   </div>
@@ -1384,7 +1360,7 @@ export default function TurizmSaaSPanel() {
                         <tr key={sub.id} className="hover:bg-slate-800/30">
                           <td className="p-3.5 font-medium text-white">{sub.fullName}</td>
                           <td className="p-3.5 text-slate-300">{sub.tenantName}</td>
-                          <td className="p-3.5 font-mono text-xs text-indigo-400">
+                          <td className="p-3.5 font-mono text-xs text-sky-400">
                             {sub.subAgentCode || "ALT"}
                           </td>
                           <td className="p-3.5 text-right">
@@ -1582,7 +1558,7 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* REZERVASYON & PNR MODALI */}
+      {/* REZERVASYON & PNR OLUŞTURMA MODALI */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
