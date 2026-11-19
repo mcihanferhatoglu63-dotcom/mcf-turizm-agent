@@ -249,7 +249,7 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("usr-super");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("usr-akdeniz-owner");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
@@ -468,7 +468,7 @@ export default function TurizmSaaSPanel() {
     setAccounts((prev) => prev.filter((a) => a.tenantId !== tenantId));
     setInventory((prev) => prev.filter((i) => i.tenantId !== tenantId));
     if (selectedAccountId && accounts.find((a) => a.id === selectedAccountId)?.tenantId === tenantId) {
-      setSelectedAccountId("usr-super");
+      setSelectedAccountId("usr-akdeniz-owner");
     }
   };
 
@@ -526,7 +526,7 @@ export default function TurizmSaaSPanel() {
     setAccounts((prev) => prev.filter((a) => a.id !== subId));
     setLimitNotice("");
     if (selectedAccountId === subId) {
-      setSelectedAccountId("usr-super");
+      setSelectedAccountId("usr-akdeniz-owner");
     }
   };
 
@@ -681,7 +681,7 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // GİRİŞ EKRANI: SÜPER ADMİN EN ÜSTTE, ALTINDA ANA ACENTE (ÜST MENÜ) & ALT ACENTE (ALT MENÜ) HİYERARŞİSİ
+  // GİRİŞ EKRANI: SAĞ ÜSTTE KÜÇÜK SÜPER ADMİN BUTONU, ANA ACENTE & ALT ACENTE HİYERARŞİSİ
   if (!currentUser) {
     const superAdminAcc = accounts.find((a) => a.role === "SUPER_ADMIN");
     const isSuperSelected = superAdminAcc?.id === selectedAccountId;
@@ -689,48 +689,39 @@ export default function TurizmSaaSPanel() {
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-3 sm:p-6">
         <div className="w-full max-w-3xl bg-[#0e1422] border border-slate-800/90 rounded-3xl p-5 sm:p-8 shadow-2xl space-y-6">
-          {/* ÜST BAŞLIK & LOGO */}
-          <div className="flex items-center gap-3.5 border-b border-slate-800 pb-5">
-            <BrandLogo size="lg" />
-            <div>
-              <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white">
-                MCF B2B TURİZM PORTALI
-              </h1>
-              <p className="text-xs text-slate-400">
-                Hesabınızı seçin ve şifrenizi girin
-              </p>
-            </div>
-          </div>
-
-          {/* EN ÜSTTE SÜPER ADMİN BUTONU (FİRMALARDAN AYRI) */}
-          {superAdminAcc && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedAccountId(superAdminAcc.id);
-                setLoginError("");
-              }}
-              className={`w-full text-left rounded-2xl p-4 border transition cursor-pointer flex items-center justify-between gap-3 ${
-                isSuperSelected
-                  ? "bg-amber-500/35 border-amber-300 text-amber-50 ring-2 ring-amber-300/60"
-                  : "bg-amber-500/20 border-amber-400/50 text-amber-100 hover:bg-amber-500/30"
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center shrink-0">
-                  <Crown className="w-5 h-5 text-amber-200" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider block opacity-90">
-                    SÜPER ADMİN
-                  </span>
-                  <p className="text-sm sm:text-base font-bold truncate">{superAdminAcc.fullName}</p>
-                  <p className="text-[11px] opacity-80 truncate">{superAdminAcc.tenantName}</p>
-                </div>
+          {/* ÜST BAŞLIK, LOGO & SAĞ ÜSTTE KÜÇÜK SÜPER ADMİN */}
+          <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-5">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <BrandLogo size="lg" />
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold tracking-wide text-white truncate">
+                  MCF B2B TURİZM PORTALI
+                </h1>
+                <p className="text-xs text-slate-400">
+                  Hesabınızı seçin ve şifrenizi girin
+                </p>
               </div>
-              {isSuperSelected && <CheckCircle2 className="w-5 h-5 shrink-0 text-amber-200" />}
-            </button>
-          )}
+            </div>
+
+            {superAdminAcc && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAccountId(superAdminAcc.id);
+                  setLoginError("");
+                }}
+                title="Sistem Operatörü Girişi"
+                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
+                  isSuperSelected
+                    ? "bg-amber-500/25 border-amber-400 text-amber-200"
+                    : "bg-[#080c16] border-slate-800 text-slate-400 hover:text-amber-200 hover:border-amber-500/40"
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>Admin</span>
+              </button>
+            )}
+          </div>
 
           {/* ANA ACENTE (ÜST MENÜ) & ALT ACENTE (ALT MENÜ) HİYERARŞİSİ */}
           <div className="space-y-4">
