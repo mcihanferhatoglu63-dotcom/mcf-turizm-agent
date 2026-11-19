@@ -29,6 +29,8 @@ import {
   Copy,
   Check,
   Palmtree,
+  Pencil,
+  ImagePlus,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
@@ -41,6 +43,7 @@ interface TenantAgency {
   plan: PlanType;
   revenue: string;
   status: "Aktif" | "Deneme";
+  editCount: number;
 }
 
 interface UserAccount {
@@ -91,6 +94,7 @@ interface PlanSpec {
   cardBorder: string;
   maxInventory: number;
   maxSubAgents: number;
+  maxEdits: number;
   summary: string;
   features: string[];
 }
@@ -104,11 +108,12 @@ const PLAN_SPECS: Record<PlanType, PlanSpec> = {
     cardBorder: "border-amber-400/35",
     maxInventory: 2,
     maxSubAgents: 1,
-    summary: "En fazla 2 kontenjan ve 1 bağlı acente",
+    maxEdits: 14,
+    summary: "14 günlük deneme • Resim ekleme, bilgi & fiyat düzenleme",
     features: [
-      "14 gün ücretsiz kullanım",
-      "En fazla 2 aktif kontenjan",
-      "1 bağlı acente hesabı",
+      "14 gün ücretsiz kullanım süresi",
+      "14 günlük deneme boyunca resim ekleme, bilgi ve fiyat düzenleme",
+      "En fazla 2 aktif kontenjan ve 1 bağlı acente",
       "PNR üretimi ve WhatsApp voucher",
     ],
   },
@@ -120,11 +125,12 @@ const PLAN_SPECS: Record<PlanType, PlanSpec> = {
     cardBorder: "border-sky-400/40",
     maxInventory: 5,
     maxSubAgents: 3,
-    summary: "En fazla 5 kontenjan ve 3 bağlı acente",
+    maxEdits: 10,
+    summary: "En fazla 10 düzenleme • Tur, otel, uçak resim & fiyat ayarı",
     features: [
-      "En fazla 5 aktif kontenjan",
-      "3 bağlı acente hesabı",
-      "Net / Rack fiyat ve komisyon takibi",
+      "En fazla 10 adet resim ekleme, bilgi ve fiyat düzenleme",
+      "Tur, otel, uçak ve diğer hizmetlerde fiyat belirleme",
+      "En fazla 5 aktif kontenjan ve 3 bağlı acente hesabı",
       "PNR kaydı ve dijital voucher gönderimi",
     ],
   },
@@ -136,12 +142,13 @@ const PLAN_SPECS: Record<PlanType, PlanSpec> = {
     cardBorder: "border-emerald-400/45",
     maxInventory: Infinity,
     maxSubAgents: Infinity,
-    summary: "Sınırsız kontenjan, bağlı acente ve tüm modüller",
+    maxEdits: Infinity,
+    summary: "Sınırsız düzenleme, resim ekleme ve fiyat belirleme",
     features: [
-      "Sınırsız kontenjan ve hizmet havuzu",
-      "Sınırsız bağlı acente ve hiyerarşi yönetimi",
+      "Sınırsız resim ekleme, bilgi ve fiyat düzenleme",
+      "Tur, otel ve uçak ayarlarında tam kontrol",
+      "Sınırsız kontenjan ve bağlı acente yönetimi",
       "Gelişmiş komisyon ve satış raporlama",
-      "Öncelikli altyapı ve tüm B2B modüller",
     ],
   },
 };
@@ -257,6 +264,7 @@ export default function TurizmSaaSPanel() {
       plan: "Pro",
       revenue: "425.000 ₺",
       status: "Aktif",
+      editCount: 0,
     },
     {
       id: "FIRM-ERDEMLI",
@@ -264,6 +272,7 @@ export default function TurizmSaaSPanel() {
       plan: "Basic",
       revenue: "148.000 ₺",
       status: "Aktif",
+      editCount: 2,
     },
     {
       id: "FIRM-DEMO",
@@ -271,6 +280,7 @@ export default function TurizmSaaSPanel() {
       plan: "Trial",
       revenue: "12.000 ₺",
       status: "Deneme",
+      editCount: 0,
     },
   ]);
 
@@ -471,15 +481,21 @@ export default function TurizmSaaSPanel() {
   const [travelDate, setTravelDate] = useState("2026-11-25");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
+  // Yeni Kontenjan / Düzenleme Modalı state'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState("OTEL");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [newCategory, setNewCategory] = useState("TUR");
   const [newTitle, setNewTitle] = useState("");
   const [newQuota, setNewQuota] = useState(5);
   const [newNetPrice, setNewNetPrice] = useState(1000);
   const [newSellPrice, setNewSellPrice] = useState(1300);
+  const [newImageSrc, setNewImageSrc] = useState("/2.webp");
   const [targetTenantId, setTargetTenantId] = useState("FIRM-AKDENIZ");
 
   const superAdminAcc = accounts.find((a) => a.role === "SUPER_ADMIN") || accounts[0];
+
+  const getTenantObj = (tenantId: string | null) =>
+    tenants.find((t) => t.id === tenantId) || null;
 
   const getTenantPlan = (tenantId: string | null): PlanType => {
     if (!tenantId) return "Pro";
@@ -491,6 +507,8 @@ export default function TurizmSaaSPanel() {
       ? "Pro"
       : getTenantPlan(currentUser.tenantId)
     : "Trial";
+
+  const activeTenantObj = currentUser ? getTenantObj(currentUser.tenantId) : null;
 
   const handleCopyIban = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -589,6 +607,7 @@ export default function TurizmSaaSPanel() {
     setLimitNotice("");
     setSelectedItem(null);
     setIsAddModalOpen(false);
+    setEditingItemId(null);
     setMobileMenuOpen(false);
   };
 
@@ -597,7 +616,12 @@ export default function TurizmSaaSPanel() {
     setTenants((prev) =>
       prev.map((t) =>
         t.id === tenantId
-          ? { ...t, plan: nextPlan, status: nextPlan === "Trial" ? "Deneme" : "Aktif" }
+          ? {
+              ...t,
+              plan: nextPlan,
+              status: nextPlan === "Trial" ? "Deneme" : "Aktif",
+              editCount: 0,
+            }
           : t
       )
     );
@@ -624,6 +648,7 @@ export default function TurizmSaaSPanel() {
       plan: newAgencyPlan,
       revenue: "0 ₺",
       status: newAgencyPlan === "Trial" ? "Deneme" : "Aktif",
+      editCount: 0,
     };
 
     const createdOwner: UserAccount = {
@@ -727,7 +752,6 @@ export default function TurizmSaaSPanel() {
       : accounts.filter((a) => a.role === "SUB_AGENT" && a.tenantId === currentUser.tenantId)
     : [];
 
-  // Süper admin sadece paketlerden kazanır; işletme ve bağlı hesap kendi satış komisyonunu görür
   const totalSubscriptionIncome = tenants.reduce(
     (sum, t) => sum + PLAN_SPECS[t.plan].monthlyAmount,
     0
@@ -739,10 +763,27 @@ export default function TurizmSaaSPanel() {
 
   const calculatedNewCommission = Math.max(0, newSellPrice - newNetPrice);
 
+  const checkTenantEditLimit = (tenantId: string | null): boolean => {
+    if (!currentUser || currentUser.role === "SUPER_ADMIN") return true;
+    const tenant = tenants.find((t) => t.id === tenantId);
+    if (!tenant) return true;
+    const spec = PLAN_SPECS[tenant.plan];
+    if (tenant.plan === "Basic" && tenant.editCount >= spec.maxEdits) {
+      setLimitNotice(
+        `${tenant.name} (Basic paket) en fazla ${spec.maxEdits} düzenleme/ekleme hakkını doldurdu. Sınırsız düzenleme için Pro pakete geçin.`
+      );
+      return false;
+    }
+    return true;
+  };
+
   const handleOpenAddInventoryModal = () => {
     if (!currentUser || currentUser.role === "SUB_AGENT") return;
     const activeTenantId =
       currentUser.role === "SUPER_ADMIN" ? targetTenantId : currentUser.tenantId || tenants[0]?.id;
+
+    if (!checkTenantEditLimit(activeTenantId)) return;
+
     const plan = getTenantPlan(activeTenantId);
     const currentTenantInventoryCount = inventory.filter((i) => i.tenantId === activeTenantId).length;
     const limit = PLAN_SPECS[plan].maxInventory;
@@ -755,54 +796,126 @@ export default function TurizmSaaSPanel() {
     }
 
     setLimitNotice("");
+    setEditingItemId(null);
+    setNewCategory("TUR");
+    setNewTitle("");
+    setNewQuota(5);
+    setNewNetPrice(1000);
+    setNewSellPrice(1300);
+    setNewImageSrc("/2.webp");
     setIsAddModalOpen(true);
   };
 
-  const handleAddInventory = (e: React.FormEvent) => {
+  const handleOpenEditInventoryModal = (item: InventoryItem) => {
+    if (!currentUser || currentUser.role === "SUB_AGENT") return;
+    if (!checkTenantEditLimit(item.tenantId)) return;
+
+    setLimitNotice("");
+    setEditingItemId(item.id);
+    setTargetTenantId(item.tenantId);
+    setNewCategory(item.category);
+    setNewTitle(item.title);
+    setNewQuota(item.quota);
+    setNewNetPrice(item.netPrice);
+    setNewSellPrice(item.sellPrice);
+    setNewImageSrc(item.imageSrc || "/3.webp");
+    setIsAddModalOpen(true);
+  };
+
+  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setNewImageSrc(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveInventoryModal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || currentUser.role === "SUB_AGENT") return;
-    if (!newTitle.trim() || newQuota <= 0) return;
+    if (!newTitle.trim() || newQuota < 0) return;
 
     const assignedTenantId =
       currentUser.role === "SUPER_ADMIN" ? targetTenantId : currentUser.tenantId || tenants[0]?.id;
-    const plan = getTenantPlan(assignedTenantId);
-    const currentTenantInventoryCount = inventory.filter((i) => i.tenantId === assignedTenantId).length;
-    const limit = PLAN_SPECS[plan].maxInventory;
 
-    if (currentUser.role !== "SUPER_ADMIN" && currentTenantInventoryCount >= limit) {
-      setIsAddModalOpen(false);
-      setLimitNotice(
-        `${currentUser.tenantName} (${plan} paket) maksimum ${limit} kontenjan sınırına ulaştı.`
-      );
-      return;
-    }
+    if (!checkTenantEditLimit(assignedTenantId)) return;
 
     const assignedTenantName =
       tenants.find((t) => t.id === assignedTenantId)?.name || currentUser.tenantName;
 
     const categoryPhotoMap: Record<string, string> = {
-      OTEL: "/3.webp",
-      PANSİYON: "/5.png",
       TUR: "/2.webp",
-      OTOBÜS: "/1.webp",
+      OTEL: "/3.webp",
       UÇAK: "/4.jpg",
+      PANSİYON: "/5.png",
+      OTOBÜS: "/1.webp",
     };
 
-    const newItem: InventoryItem = {
-      id: `${newCategory.slice(0, 3)}-${Math.floor(10 + Math.random() * 89)}`,
-      tenantId: assignedTenantId,
-      tenantName: assignedTenantName,
-      category: newCategory,
-      title: newTitle.trim(),
-      quota: newQuota,
-      netPrice: newNetPrice,
-      sellPrice: newSellPrice,
-      commission: calculatedNewCommission,
-      imageSrc: categoryPhotoMap[newCategory] || "/3.webp",
-    };
+    const finalImage = newImageSrc.trim() || categoryPhotoMap[newCategory] || "/3.webp";
+    const computedCommission = Math.max(0, newSellPrice - newNetPrice);
 
-    setInventory([newItem, ...inventory]);
+    if (editingItemId) {
+      setInventory((prev) =>
+        prev.map((inv) =>
+          inv.id === editingItemId
+            ? {
+                ...inv,
+                category: newCategory,
+                title: newTitle.trim(),
+                quota: newQuota,
+                netPrice: newNetPrice,
+                sellPrice: newSellPrice,
+                commission: computedCommission,
+                imageSrc: finalImage,
+              }
+            : inv
+        )
+      );
+    } else {
+      const plan = getTenantPlan(assignedTenantId);
+      const currentTenantInventoryCount = inventory.filter(
+        (i) => i.tenantId === assignedTenantId
+      ).length;
+      const limit = PLAN_SPECS[plan].maxInventory;
+
+      if (currentUser.role !== "SUPER_ADMIN" && currentTenantInventoryCount >= limit) {
+        setIsAddModalOpen(false);
+        setLimitNotice(
+          `${currentUser.tenantName} (${plan} paket) maksimum ${limit} kontenjan sınırına ulaştı.`
+        );
+        return;
+      }
+
+      const newItem: InventoryItem = {
+        id: `${newCategory.slice(0, 3)}-${Math.floor(10 + Math.random() * 89)}`,
+        tenantId: assignedTenantId,
+        tenantName: assignedTenantName,
+        category: newCategory,
+        title: newTitle.trim(),
+        quota: newQuota,
+        netPrice: newNetPrice,
+        sellPrice: newSellPrice,
+        commission: computedCommission,
+        imageSrc: finalImage,
+      };
+
+      setInventory([newItem, ...inventory]);
+    }
+
+    if (currentUser.role === "TENANT_ADMIN" && assignedTenantId) {
+      setTenants((prev) =>
+        prev.map((t) =>
+          t.id === assignedTenantId ? { ...t, editCount: t.editCount + 1 } : t
+        )
+      );
+    }
+
     setIsAddModalOpen(false);
+    setEditingItemId(null);
     setNewTitle("");
     setNewQuota(5);
     setNewNetPrice(1000);
@@ -1258,6 +1371,7 @@ export default function TurizmSaaSPanel() {
   }
 
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
+  const isTenantAdmin = currentUser.role === "TENANT_ADMIN";
   const hierarchyTenants = isSuperAdmin
     ? tenants
     : tenants.filter((t) => t.id === currentUser.tenantId);
@@ -1389,6 +1503,18 @@ export default function TurizmSaaSPanel() {
             <p className="text-lg font-bold text-emerald-400 mt-0.5">
               +{isSuperAdmin ? totalSubscriptionIncome.toLocaleString("tr-TR") : totalAgentCommission} ₺
             </p>
+            {isTenantAdmin && activeTenantObj && (
+              <p className="text-[10px] text-slate-400 mt-1">
+                Düzenleme:{" "}
+                <span className="text-white font-semibold">
+                  {activeTenantObj.plan === "Pro"
+                    ? `${activeTenantObj.editCount} / ∞`
+                    : activeTenantObj.plan === "Basic"
+                    ? `${activeTenantObj.editCount} / ${PLAN_SPECS.Basic.maxEdits}`
+                    : "14 Gün"}
+                </span>
+              </p>
+            )}
           </div>
         </aside>
 
@@ -1460,7 +1586,17 @@ export default function TurizmSaaSPanel() {
                             {item.category}
                           </span>
                         </div>
-                        <div className="absolute top-2.5 right-2.5">
+                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                          {currentUser.role !== "SUB_AGENT" && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditInventoryModal(item)}
+                              title="Düzenle"
+                              className="bg-black/75 hover:bg-indigo-600 text-white p-1.5 rounded-md border border-white/15 backdrop-blur-sm transition cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <span
                             className={`text-[11px] font-semibold px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-sm ${
                               item.quota > 0 ? "text-emerald-300" : "text-rose-300"
@@ -1496,11 +1632,20 @@ export default function TurizmSaaSPanel() {
                       </div>
                     </div>
 
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5">
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
+                      {currentUser.role !== "SUB_AGENT" && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditInventoryModal(item)}
+                          className="bg-[#080c16] hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium text-xs px-3 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Düzenle
+                        </button>
+                      )}
                       <button
                         disabled={item.quota === 0}
                         onClick={() => openBookingModal(item)}
-                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
                       >
                         <Plus className="w-4 h-4" /> Rezervasyon Gir
                       </button>
@@ -1891,25 +2036,34 @@ export default function TurizmSaaSPanel() {
         </main>
       </div>
 
-      {/* YENİ KONTENJAN MODALI */}
+      {/* YENİ KONTENJAN / DÜZENLEME MODALI */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
+          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
               <div className="flex items-center gap-2">
-                <PackagePlus className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-white">Yeni Kontenjan</h3>
+                {editingItemId ? (
+                  <Pencil className="w-5 h-5 text-indigo-400" />
+                ) : (
+                  <PackagePlus className="w-5 h-5 text-emerald-400" />
+                )}
+                <h3 className="font-bold text-white">
+                  {editingItemId ? "Bilgi, Resim & Fiyat Düzenle" : "Yeni Kontenjan"}
+                </h3>
               </div>
               <button
-                onClick={() => setIsAddModalOpen(false)}
+                onClick={() => {
+                  setIsAddModalOpen(false);
+                  setEditingItemId(null);
+                }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddInventory} className="space-y-4">
-              {isSuperAdmin && (
+            <form onSubmit={handleSaveInventoryModal} className="space-y-4">
+              {isSuperAdmin && !editingItemId && (
                 <div>
                   <label className="block text-xs text-slate-400 mb-1.5">Acente</label>
                   <select
@@ -1934,19 +2088,19 @@ export default function TurizmSaaSPanel() {
                     onChange={(e) => setNewCategory(e.target.value)}
                     className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
                   >
-                    <option value="OTEL">OTEL</option>
-                    <option value="PANSİYON">PANSİYON</option>
                     <option value="TUR">TUR</option>
-                    <option value="OTOBÜS">OTOBÜS</option>
+                    <option value="OTEL">OTEL</option>
                     <option value="UÇAK">UÇAK</option>
+                    <option value="PANSİYON">PANSİYON</option>
+                    <option value="OTOBÜS">OTOBÜS</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Adet</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Adet / Kontenjan</label>
                   <input
                     type="number"
-                    min={1}
+                    min={0}
                     required
                     value={newQuota}
                     onChange={(e) => setNewQuota(Number(e.target.value))}
@@ -1956,20 +2110,57 @@ export default function TurizmSaaSPanel() {
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Başlık</label>
+                <label className="block text-xs text-slate-400 mb-1.5">Başlık / Rota / Tesis</label>
                 <input
                   type="text"
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Tesis / Tur / Hat"
+                  placeholder="Örn: Kapadokya Balon Turu / Hilton Otel / THY Uçuş"
                   className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
                 />
               </div>
 
+              {/* RESİM EKLEME (DOSYA VEYA URL) */}
+              <div className="space-y-2 bg-[#080c16] border border-slate-800 rounded-xl p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
+                    <ImagePlus className="w-4 h-4 text-indigo-400" /> Görsel (Dosya veya Link)
+                  </label>
+                  <label className="bg-[#0e1422] hover:bg-slate-800 border border-slate-700 text-xs text-indigo-300 px-2.5 py-1 rounded-lg cursor-pointer transition">
+                    Dosya Seç
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <input
+                  type="text"
+                  value={newImageSrc}
+                  onChange={(e) => setNewImageSrc(e.target.value)}
+                  placeholder="/2.webp veya https://..."
+                  className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full focus:outline-none"
+                />
+
+                {newImageSrc && (
+                  <div className="h-24 w-full rounded-lg overflow-hidden border border-slate-800">
+                    <ShowcaseImage
+                      src={newImageSrc}
+                      alt={newTitle || "Önizleme"}
+                      fallbackGradient="from-indigo-950 via-slate-900 to-emerald-950"
+                      className="w-full h-full"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Net (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Net Fiyat (₺)</label>
                   <input
                     type="number"
                     min={0}
@@ -1981,7 +2172,7 @@ export default function TurizmSaaSPanel() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Satış (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Satış Fiyatı (₺)</label>
                   <input
                     type="number"
                     min={0}
@@ -2002,7 +2193,7 @@ export default function TurizmSaaSPanel() {
                 type="submit"
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
               >
-                Yayınla
+                {editingItemId ? "Değişiklikleri Kaydet" : "Yayınla"}
               </button>
             </form>
           </div>
