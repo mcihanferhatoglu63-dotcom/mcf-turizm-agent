@@ -349,7 +349,8 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("usr-akdeniz-owner");
+  // Tıklandığında açılan intro şifre form kutusu için aktif kullanıcı
+  const [introAccount, setIntroAccount] = useState<UserAccount | null>(null);
   const [loginPassword, setLoginPassword] = useState("");
   const [superPassword, setSuperPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -477,7 +478,6 @@ export default function TurizmSaaSPanel() {
   const [targetTenantId, setTargetTenantId] = useState("FIRM-AKDENIZ");
 
   const superAdminAcc = accounts.find((a) => a.role === "SUPER_ADMIN") || accounts[0];
-  const chosenAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[1] || accounts[0];
 
   const getTenantPlan = (tenantId: string | null): PlanType => {
     if (!tenantId) return "Pro";
@@ -498,8 +498,15 @@ export default function TurizmSaaSPanel() {
     setTimeout(() => setCopiedIban(false), 2000);
   };
 
+  const openIntroForAccount = (acc: UserAccount) => {
+    setIntroAccount(acc);
+    setLoginPassword("");
+    setLoginError("");
+  };
+
   const completeLogin = (acc: UserAccount) => {
     setCurrentUser(acc);
+    setIntroAccount(null);
     setLoginPassword("");
     setSuperPassword("");
     setLoginError("");
@@ -520,16 +527,16 @@ export default function TurizmSaaSPanel() {
     }
   };
 
-  const handlePasswordLogin = (e: React.FormEvent) => {
+  const handleIntroPasswordLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chosenAccount) return;
+    if (!introAccount) return;
 
-    if (loginPassword !== chosenAccount.password) {
-      setLoginError(`"${chosenAccount.fullName}" hesabı için şifre hatalı.`);
+    if (loginPassword !== introAccount.password) {
+      setLoginError("Şifre hatalı.");
       return;
     }
 
-    completeLogin(chosenAccount);
+    completeLogin(introAccount);
   };
 
   const handleSuperAdminLogin = (e: React.FormEvent) => {
@@ -538,6 +545,7 @@ export default function TurizmSaaSPanel() {
 
     if (superPassword !== superAdminAcc.password) {
       setLoginError("superadmin şifresi hatalı.");
+      setIntroAccount(superAdminAcc);
       return;
     }
 
@@ -571,6 +579,7 @@ export default function TurizmSaaSPanel() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setIntroAccount(null);
     setShowNewPasswordScreen(false);
     setLoginPassword("");
     setSuperPassword("");
@@ -639,9 +648,6 @@ export default function TurizmSaaSPanel() {
     setTenants((prev) => prev.filter((t) => t.id !== tenantId));
     setAccounts((prev) => prev.filter((a) => a.tenantId !== tenantId));
     setInventory((prev) => prev.filter((i) => i.tenantId !== tenantId));
-    if (selectedAccountId && accounts.find((a) => a.id === selectedAccountId)?.tenantId === tenantId) {
-      setSelectedAccountId("usr-akdeniz-owner");
-    }
   };
 
   const handleAddSubAgent = (e: React.FormEvent) => {
@@ -697,9 +703,6 @@ export default function TurizmSaaSPanel() {
 
     setAccounts((prev) => prev.filter((a) => a.id !== subId));
     setLimitNotice("");
-    if (selectedAccountId === subId) {
-      setSelectedAccountId("usr-akdeniz-owner");
-    }
   };
 
   const visibleInventory = currentUser
@@ -862,7 +865,7 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // ÖN YÜZ EKRANI
+  // ÖN YÜZ EKRANI + TIKLAYINCA AÇILAN İNTRO ŞİFRE FORMU
   if (!currentUser) {
     const activeSpec = PLAN_SPECS[showcasePlan];
     const filmLoopItems = [...HOLIDAY_SHOWCASE, ...HOLIDAY_SHOWCASE];
@@ -881,6 +884,13 @@ export default function TurizmSaaSPanel() {
           }
           .mcf-film-track:hover {
             animation-play-state: paused;
+          }
+          @keyframes mcfIntroPop {
+            0% { opacity: 0; transform: scale(0.95) translateY(8px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+          }
+          .mcf-intro-modal {
+            animation: mcfIntroPop 0.22s ease-out forwards;
           }
         `}</style>
 
@@ -1025,9 +1035,9 @@ export default function TurizmSaaSPanel() {
             </div>
           </div>
 
-          {/* ALT KISIM: HİYERARŞİK ACENTE SEÇİMİ & ŞİFRE GİRİŞİ */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            <div className="lg:col-span-7 bg-[#0e1422] border border-slate-800/90 rounded-2xl p-4 sm:p-5 space-y-3">
+          {/* HİYERARŞİK HESAP LİSTESİ (TIKLAYINCA İNTRO ŞİFRE KUTUSU AÇILIR) */}
+          <div className="bg-[#0e1422] border border-slate-800/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-lg">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               {tenants.map((tenant) => {
                 const mainAgencyAcc = accounts.find(
                   (a) => a.role === "TENANT_ADMIN" && a.tenantId === tenant.id
@@ -1035,7 +1045,6 @@ export default function TurizmSaaSPanel() {
                 const subAgencyAccs = accounts.filter(
                   (a) => a.role === "SUB_AGENT" && a.tenantId === tenant.id
                 );
-                const isMainSelected = mainAgencyAcc?.id === selectedAccountId;
 
                 return (
                   <div
@@ -1045,19 +1054,12 @@ export default function TurizmSaaSPanel() {
                     {mainAgencyAcc && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedAccountId(mainAgencyAcc.id);
-                          setLoginError("");
-                        }}
-                        className={`w-full text-left rounded-xl p-3 border transition cursor-pointer flex items-center justify-between gap-2 ${
-                          isMainSelected
-                            ? "bg-emerald-500/35 border-emerald-300 text-emerald-50 ring-2 ring-emerald-300/60"
-                            : "bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30"
-                        }`}
+                        onClick={() => openIntroForAccount(mainAgencyAcc)}
+                        className="w-full text-left rounded-xl p-3 border transition cursor-pointer flex items-center justify-between gap-2 bg-emerald-500/20 border-emerald-400/50 text-emerald-100 hover:bg-emerald-500/30"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-black/30 opacity-90">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-black/30 opacity-90">
                               {tenant.plan}
                             </span>
                             <p className="text-sm font-bold truncate">{tenant.name}</p>
@@ -1066,61 +1068,83 @@ export default function TurizmSaaSPanel() {
                             {mainAgencyAcc.fullName}
                           </p>
                         </div>
-                        {isMainSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                        <Lock className="w-4 h-4 shrink-0 opacity-80" />
                       </button>
                     )}
 
                     {subAgencyAccs.length > 0 && (
-                      <div className="pl-3 sm:pl-5 border-l-2 border-sky-400/40 space-y-1.5">
-                        {subAgencyAccs.map((sub) => {
-                          const isSubSelected = sub.id === selectedAccountId;
-                          return (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedAccountId(sub.id);
-                                setLoginError("");
-                              }}
-                              className={`w-full text-left rounded-xl px-3 py-2 border transition cursor-pointer flex items-center justify-between gap-2 ${
-                                isSubSelected
-                                  ? "bg-sky-500/35 border-sky-300 text-sky-50 ring-2 ring-sky-300/60"
-                                  : "bg-sky-500/20 border-sky-400/50 text-sky-100 hover:bg-sky-500/30"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <CornerDownRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                                <span className="text-xs sm:text-sm font-bold truncate">
-                                  {sub.fullName}
-                                </span>
-                              </div>
-                              {isSubSelected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
-                            </button>
-                          );
-                        })}
+                      <div className="pl-3 border-l-2 border-sky-400/40 space-y-1.5">
+                        {subAgencyAccs.map((sub) => (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => openIntroForAccount(sub)}
+                            className="w-full text-left rounded-xl px-3 py-2 border transition cursor-pointer flex items-center justify-between gap-2 bg-sky-500/20 border-sky-400/50 text-sky-100 hover:bg-sky-500/30"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <CornerDownRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                              <span className="text-xs sm:text-sm font-bold truncate">
+                                {sub.fullName}
+                              </span>
+                            </div>
+                            <Lock className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+          </div>
+        </div>
 
-            <div className="lg:col-span-5">
-              <form
-                onSubmit={handlePasswordLogin}
-                className="bg-[#0e1422] border border-slate-800/90 rounded-2xl p-4 sm:p-5 space-y-4"
-              >
-                <div className="text-xs text-slate-400">
-                  Seçili Hesap: <strong className="text-white">{chosenAccount.fullName}</strong>
+        {/* İNTRO ŞİFRE GİRİŞ FORM KUTUSU (TIKLANINCA AÇILIR) */}
+        {introAccount && (
+          <div
+            onClick={() => {
+              setIntroAccount(null);
+              setLoginPassword("");
+              setLoginError("");
+            }}
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="mcf-intro-modal bg-[#0e1422] border border-slate-700/90 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-400 truncate">{introAccount.tenantName}</p>
+                  <h3 className="text-base font-bold text-white truncate mt-0.5">
+                    {introAccount.fullName}
+                  </h3>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIntroAccount(null);
+                    setLoginPassword("");
+                    setLoginError("");
+                  }}
+                  className="text-slate-400 hover:text-white p-1.5 rounded-xl bg-[#080c16] border border-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
+              <form onSubmit={handleIntroPasswordLogin} className="space-y-4">
                 <div className="flex items-center gap-2.5 bg-[#080c16] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3.5 py-2.5">
                   <Lock className="w-4 h-4 text-indigo-400 shrink-0" />
                   <input
                     type="password"
                     required
+                    autoFocus
                     value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onChange={(e) => {
+                      setLoginPassword(e.target.value);
+                      setLoginError("");
+                    }}
                     placeholder="Şifre"
                     className="bg-transparent text-sm text-white w-full focus:outline-none"
                   />
@@ -1141,7 +1165,7 @@ export default function TurizmSaaSPanel() {
               </form>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
