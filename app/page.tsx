@@ -30,9 +30,9 @@ interface UserAccount {
   password: string;
   fullName: string;
   role: UserRole;
-  tenantId: string | null; // SUPER_ADMIN için null, firmalar için firma kodu
+  tenantId: string | null;
   tenantName: string;
-  subAgentCode?: string; // SUB_AGENT için kendi acente/aracı kodu
+  subAgentCode?: string;
 }
 
 interface InventoryItem {
@@ -68,10 +68,10 @@ const USER_ACCOUNTS: UserAccount[] = [
     id: "usr-super",
     username: "superadmin",
     password: "123",
-    fullName: "Sistem Yöneticisi (Süper Admin)",
+    fullName: "Platform Yöneticisi (Sistem Operatörü)",
     role: "SUPER_ADMIN",
     tenantId: null,
-    tenantName: "MCF SaaS Platform",
+    tenantName: "MCF B2B Turizm Altyapısı",
   },
   {
     id: "usr-akdeniz-owner",
@@ -124,7 +124,6 @@ const USER_ACCOUNTS: UserAccount[] = [
 ];
 
 export default function TurizmSaaSPanel() {
-  // Giriş State'leri
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -132,7 +131,6 @@ export default function TurizmSaaSPanel() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
 
-  // Firma Bazlı Canlı Envanter & Kontenjan State'i
   const [inventory, setInventory] = useState<InventoryItem[]>([
     {
       id: "HTL-01",
@@ -191,7 +189,6 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  // Firma & Aracı Bazlı Canlı Rezervasyon & PNR State'i
   const [bookings, setBookings] = useState<BookingItem[]>([
     {
       pnr: "MCF-4821",
@@ -240,7 +237,6 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  // Rezervasyon Modal State'leri
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -248,7 +244,6 @@ export default function TurizmSaaSPanel() {
   const [travelDate, setTravelDate] = useState("2026-11-25");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
-  // Yeni Kontenjan Ekleme Modal State'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("OTEL");
   const [newTitle, setNewTitle] = useState("");
@@ -257,7 +252,6 @@ export default function TurizmSaaSPanel() {
   const [newSellPrice, setNewSellPrice] = useState(1300);
   const [targetTenantId, setTargetTenantId] = useState("FIRM-AKDENIZ");
 
-  // Örnek İşletmeler (Süper Admin sekmesi için)
   const tenants = [
     {
       id: "FIRM-AKDENIZ",
@@ -288,7 +282,6 @@ export default function TurizmSaaSPanel() {
     },
   ];
 
-  // Giriş İşlemi
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUser = loginUsername.trim().toLowerCase();
@@ -323,7 +316,6 @@ export default function TurizmSaaSPanel() {
     setIsAddModalOpen(false);
   };
 
-  // KULLANICI ROLÜNE VE FİRMASINA GÖRE FİLTRELENMİŞ VERİLER
   const visibleInventory = currentUser
     ? currentUser.role === "SUPER_ADMIN"
       ? inventory
@@ -341,7 +333,6 @@ export default function TurizmSaaSPanel() {
   const totalCommission = visibleBookings.reduce((acc, b) => acc + b.commissionEarned, 0);
   const calculatedNewCommission = Math.max(0, newSellPrice - newNetPrice);
 
-  // Yeni Kontenjan Kaydetme Fonksiyonu
   const handleAddInventory = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || currentUser.role === "SUB_AGENT") return;
@@ -439,7 +430,7 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // GİRİŞ EKRANI (KULLANICI ADI & ŞİFRE)
+  // GİRİŞ EKRANI
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-4">
@@ -449,9 +440,9 @@ export default function TurizmSaaSPanel() {
               <Building2 className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wide text-white">MCF TURİZM-ACENTE B2B</h1>
+              <h1 className="text-xl font-bold tracking-wide text-white">MCF B2B TURİZM PORTALI</h1>
               <p className="text-xs text-slate-400">
-                Süper Admin, İşletme Sahibi ve Aracı (Sub-Agent) Giriş Paneli
+                Sistem Operatörü, Ana Acente (Wholesaler) ve Alt Acente (Sub-Agent) Girişi
               </p>
             </div>
           </div>
@@ -497,7 +488,7 @@ export default function TurizmSaaSPanel() {
               type="submit"
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
             >
-              <KeyRound className="w-4 h-4" /> Sisteme Güvenli Giriş Yap
+              <KeyRound className="w-4 h-4" /> B2B Paneline Giriş Yap
             </button>
           </form>
 
@@ -512,7 +503,7 @@ export default function TurizmSaaSPanel() {
                 onClick={() => quickFillLogin("superadmin", "123")}
                 className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
               >
-                <span className="font-bold text-indigo-400 block">Süper Admin</span>
+                <span className="font-bold text-indigo-400 block">Sistem Operatörü (Super Admin)</span>
                 <span className="text-slate-400 font-mono">superadmin</span>
               </button>
 
@@ -521,7 +512,7 @@ export default function TurizmSaaSPanel() {
                 onClick={() => quickFillLogin("akdeniz_sahip", "123")}
                 className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
               >
-                <span className="font-bold text-emerald-400 block">İşletme Sahibi (Akdeniz Turizm)</span>
+                <span className="font-bold text-emerald-400 block">Ana Acente / Wholesaler (Akdeniz)</span>
                 <span className="text-slate-400 font-mono">akdeniz_sahip</span>
               </button>
 
@@ -530,7 +521,7 @@ export default function TurizmSaaSPanel() {
                 onClick={() => quickFillLogin("akdeniz_araci1", "123")}
                 className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
               >
-                <span className="font-bold text-amber-400 block">Aracı 1 (Akdeniz - Mert Arslan)</span>
+                <span className="font-bold text-amber-400 block">Alt Acente / Sub-Agent (Mert Arslan)</span>
                 <span className="text-slate-400 font-mono">akdeniz_araci1</span>
               </button>
 
@@ -539,7 +530,7 @@ export default function TurizmSaaSPanel() {
                 onClick={() => quickFillLogin("erdemli_sahip", "123")}
                 className="text-left bg-[#080c16] hover:bg-slate-800/70 border border-slate-800 rounded-xl p-3 transition cursor-pointer"
               >
-                <span className="font-bold text-sky-400 block">İşletme Sahibi (Erdemli Travel)</span>
+                <span className="font-bold text-sky-400 block">Ana Acente / Wholesaler (Erdemli)</span>
                 <span className="text-slate-400 font-mono">erdemli_sahip</span>
               </button>
             </div>
@@ -551,10 +542,10 @@ export default function TurizmSaaSPanel() {
 
   const roleLabel =
     currentUser.role === "SUPER_ADMIN"
-      ? "Süper Admin"
+      ? "Sistem Operatörü (Super Admin)"
       : currentUser.role === "TENANT_ADMIN"
-      ? "İşletme Sahibi"
-      : "Aracı / Sub-Agent";
+      ? "Ana Acente (Wholesaler)"
+      : "Alt Acente (Sub-Agent)";
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
@@ -565,7 +556,7 @@ export default function TurizmSaaSPanel() {
             <Building2 className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-wide text-white">MCF TURİZM-ACENTE</h1>
+            <h1 className="text-lg font-bold tracking-wide text-white">MCF B2B TURİZM PORTALI</h1>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
               <Briefcase className="w-3.5 h-3.5 text-indigo-400" />
               <span>{currentUser.tenantName}</span>
@@ -597,10 +588,10 @@ export default function TurizmSaaSPanel() {
         <aside className="w-full md:w-64 bg-[#0b101d]/70 border-r border-slate-800/80 p-4 flex flex-col gap-2">
           <p className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mb-1">
             {currentUser.role === "SUPER_ADMIN"
-              ? "SİSTEM YÖNETİMİ"
+              ? "PLATFORM YÖNETİMİ"
               : currentUser.role === "TENANT_ADMIN"
-              ? "FİRMA YÖNETİM PANELİ"
-              : "ARACI SATIŞ PANELİ"}
+              ? "ANA ACENTE YÖNETİMİ"
+              : "ALT ACENTE SATIŞ PANELİ"}
           </p>
 
           <button
@@ -611,7 +602,7 @@ export default function TurizmSaaSPanel() {
                 : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
             }`}
           >
-            <Calendar className="w-4 h-4" /> Müsaitlik & Hızlı Satış
+            <Calendar className="w-4 h-4" /> Kontenjan & B2B Satış
           </button>
 
           {currentUser.role === "SUPER_ADMIN" && (
@@ -623,7 +614,7 @@ export default function TurizmSaaSPanel() {
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
               }`}
             >
-              <ShieldCheck className="w-4 h-4" /> İşletmeler & Paketler
+              <ShieldCheck className="w-4 h-4" /> Ana Acenteler & Paketler
             </button>
           )}
 
@@ -635,33 +626,35 @@ export default function TurizmSaaSPanel() {
                 : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
             }`}
           >
-            <Users className="w-4 h-4" /> Rezervasyonlar & Voucher
+            <Users className="w-4 h-4" /> PNR Kayıtları & Voucher
           </button>
 
           {/* SOL ALT KOMİSYON KARTI */}
           <div className="mt-auto bg-[#0f1626] border border-slate-800 rounded-2xl p-4">
             <p className="text-xs text-slate-400">
-              {currentUser.role === "SUB_AGENT" ? "Kişisel Komisyon Kazancım" : "Görünen Toplam Komisyon"}
+              {currentUser.role === "SUB_AGENT"
+                ? "Net Komisyon Kazancım (Markup)"
+                : "Toplam Alt Acente Komisyonu"}
             </p>
             <p className="text-2xl font-bold text-emerald-400 mt-1">+{totalCommission} ₺</p>
             <p className="text-[11px] text-slate-500 mt-1">
-              {visibleBookings.length} adet yetkili satıştan
+              {visibleBookings.length} adet onaylı rezervasyondan
             </p>
           </div>
         </aside>
 
         {/* SAĞ İÇERİK ALANI */}
         <main className="flex-1 p-6 md:p-8 max-w-7xl">
-          {/* SEKME 1: MÜSAİTLİK & HIZLI SATIŞ HAVUZU */}
+          {/* SEKME 1: KONTENJAN & B2B SATIŞ HAVUZU */}
           {activeTab === "dashboard" && (
             <div>
               <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-white">Anlık Müsaitlik ve Hızlı Satış Havuzu</h2>
+                  <h2 className="text-xl font-bold text-white">Anlık Kontenjan ve B2B Satış Havuzu</h2>
                   <p className="text-sm text-slate-400 mt-1">
                     {currentUser.role === "SUPER_ADMIN"
-                      ? "Tüm firmalara ait aktif blok kontenjanları görüntülüyorsunuz."
-                      : `${currentUser.tenantName} firmasına tanımlı aktif kontenjanlar.`}
+                      ? "Tüm ana acentelere ait blok kontenjanları görüntülüyorsunuz."
+                      : `${currentUser.tenantName} tedarikçisine ait aktif blok kontenjanlar.`}
                   </p>
                 </div>
 
@@ -695,22 +688,22 @@ export default function TurizmSaaSPanel() {
                         </span>
                       </div>
 
-                      <p className="text-[11px] text-slate-500 mb-1">Firma: {item.tenantName}</p>
+                      <p className="text-[11px] text-slate-500 mb-1">Ana Acente: {item.tenantName}</p>
                       <h3 className="text-base font-bold text-white mb-4">{item.title}</h3>
 
                       <div className="bg-[#080c16] border border-slate-800/80 rounded-xl p-3.5 space-y-2 text-xs">
                         {currentUser.role !== "SUB_AGENT" && (
                           <div className="flex justify-between">
-                            <span className="text-slate-400">Net B2B Maliyet:</span>
+                            <span className="text-slate-400">Net Fiyat (Kontrat Rate):</span>
                             <span className="font-semibold text-white">{item.netPrice} ₺</span>
                           </div>
                         )}
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Müşteri Satış Fiyatı:</span>
+                          <span className="text-slate-400">Satış Fiyatı (Rack Rate):</span>
                           <span className="font-bold text-indigo-400">{item.sellPrice} ₺</span>
                         </div>
                         <div className="border-t border-slate-800 pt-2 flex justify-between">
-                          <span className="text-slate-400">Aracı Net Kazancı:</span>
+                          <span className="text-slate-400">Alt Acente Komisyonu (Markup):</span>
                           <span className="font-bold text-emerald-400">+{item.commission} ₺</span>
                         </div>
                       </div>
@@ -729,14 +722,14 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 2: İŞLETMELER & PAKETLER (SADECE SUPER ADMIN) */}
+          {/* SEKME 2: ANA ACENTELER & PAKETLER (SUPER ADMIN) */}
           {activeTab === "tenants" && currentUser.role === "SUPER_ADMIN" && (
             <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
               <div className="p-5 border-b border-slate-800 flex justify-between items-center">
                 <div>
-                  <h2 className="text-lg font-bold text-white">Kayıtlı Acenteler & SaaS Paketleri</h2>
+                  <h2 className="text-lg font-bold text-white">Ana Acenteler (Wholesaler) & SaaS Paketleri</h2>
                   <p className="text-xs text-slate-400">
-                    Sisteme bağlı tüm firmaların abonelik, firma kodu ve hacim durumu
+                    Platforma bağlı tüm tedarikçi acentelerin abonelik ve hacim durumu
                   </p>
                 </div>
               </div>
@@ -744,10 +737,10 @@ export default function TurizmSaaSPanel() {
                 <table className="w-full text-left text-sm">
                   <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                     <tr>
-                      <th className="p-4">Firma / Acente</th>
-                      <th className="p-4">Sahip Kullanıcı</th>
-                      <th className="p-4">Paket</th>
-                      <th className="p-4">Aracı Sayısı</th>
+                      <th className="p-4">Ana Acente (Tenant)</th>
+                      <th className="p-4">Yönetici Kullanıcı</th>
+                      <th className="p-4">SaaS Paketi</th>
+                      <th className="p-4">Alt Acente Ağı</th>
                       <th className="p-4">Toplam Ciro</th>
                       <th className="p-4">Durum</th>
                     </tr>
@@ -765,7 +758,7 @@ export default function TurizmSaaSPanel() {
                             {t.plan}
                           </span>
                         </td>
-                        <td className="p-4 text-slate-300">{t.subAgents} Aracı</td>
+                        <td className="p-4 text-slate-300">{t.subAgents} Sub-Agent</td>
                         <td className="p-4 font-semibold text-white">{t.revenue}</td>
                         <td className="p-4 text-emerald-400 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4" /> {t.status}
@@ -778,7 +771,7 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 3: REZERVASYONLAR & VOUCHER */}
+          {/* SEKME 3: PNR KAYITLARI & VOUCHER */}
           {activeTab === "bookings" && (
             <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
               <div className="p-5 border-b border-slate-800 flex justify-between items-center">
@@ -786,7 +779,7 @@ export default function TurizmSaaSPanel() {
                   <h2 className="text-lg font-bold text-white">Kesilen PNR Kayıtları & Dijital Voucher</h2>
                   <p className="text-xs text-slate-400">
                     {currentUser.role === "SUB_AGENT"
-                      ? "Yalnızca kendi kestiğiniz PNR ve komisyon kayıtlarınız listelenmektedir."
+                      ? "Yalnızca kendi kestiğiniz PNR ve komisyon (markup) kayıtlarınız listelenmektedir."
                       : "Yetki alanınızdaki rezervasyonları tek tıkla WhatsApp üzerinden paylaşın."}
                   </p>
                 </div>
@@ -796,12 +789,12 @@ export default function TurizmSaaSPanel() {
                   <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                     <tr>
                       <th className="p-4">PNR Kodu</th>
-                      <th className="p-4">Firma / Aracı</th>
+                      <th className="p-4">Ana Acente / Alt Acente</th>
                       <th className="p-4">Misafir</th>
                       <th className="p-4">Hizmet</th>
                       <th className="p-4">Tarih / Kişi</th>
-                      <th className="p-4">Tutar</th>
-                      <th className="p-4">Komisyon</th>
+                      <th className="p-4">Rack Rate Tutar</th>
+                      <th className="p-4">Komisyon (Markup)</th>
                       <th className="p-4">İşlem</th>
                     </tr>
                   </thead>
@@ -840,7 +833,7 @@ export default function TurizmSaaSPanel() {
         </main>
       </div>
 
-      {/* YENİ KONTENJAN / ÜRÜN EKLEME MODALI */}
+      {/* YENİ KONTENJAN EKLEME MODALI */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-6 shadow-2xl">
@@ -860,7 +853,7 @@ export default function TurizmSaaSPanel() {
             <form onSubmit={handleAddInventory} className="space-y-4">
               {currentUser.role === "SUPER_ADMIN" && (
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Hedef Firma</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Hedef Ana Acente (Wholesaler)</label>
                   <select
                     value={targetTenantId}
                     onChange={(e) => setTargetTenantId(e.target.value)}
@@ -918,7 +911,7 @@ export default function TurizmSaaSPanel() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Net B2B Maliyet (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Net Fiyat / Kontrat Rate (₺)</label>
                   <input
                     type="number"
                     min={0}
@@ -930,7 +923,7 @@ export default function TurizmSaaSPanel() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Müşteri Satış Fiyatı (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Satış Fiyatı / Rack Rate (₺)</label>
                   <input
                     type="number"
                     min={0}
@@ -943,7 +936,7 @@ export default function TurizmSaaSPanel() {
               </div>
 
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex justify-between items-center">
-                <span className="text-xs text-slate-300">Aracı Net Kazancı (Otomatik):</span>
+                <span className="text-xs text-slate-300">Alt Acente Komisyonu (Markup):</span>
                 <span className="text-base font-bold text-emerald-400">+{calculatedNewCommission} ₺</span>
               </div>
 
@@ -951,7 +944,7 @@ export default function TurizmSaaSPanel() {
                 type="submit"
                 className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
               >
-                Havuzda Yayınla
+                B2B Havuzunda Yayınla
               </button>
             </form>
           </div>
@@ -983,7 +976,7 @@ export default function TurizmSaaSPanel() {
                   </p>
                   <p className="text-sm font-bold text-white mt-0.5">{selectedItem.title}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Birim Satış:{" "}
+                    Rack Rate:{" "}
                     <span className="text-white font-semibold">{selectedItem.sellPrice} ₺</span> • Kalan
                     Kontenjan:{" "}
                     <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
@@ -1047,11 +1040,11 @@ export default function TurizmSaaSPanel() {
 
                 <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
                   <div>
-                    <p className="text-xs text-slate-400">Tahsil Edilecek Tutar</p>
+                    <p className="text-xs text-slate-400">Tahsil Edilecek Tutar (Rack Rate)</p>
                     <p className="text-lg font-bold text-white">{selectedItem.sellPrice * paxCount} ₺</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-slate-400">Net Komisyonun</p>
+                    <p className="text-xs text-slate-400">Net Komisyon (Markup)</p>
                     <p className="text-sm font-bold text-emerald-400">
                       +{selectedItem.commission * paxCount} ₺
                     </p>
