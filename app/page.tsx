@@ -68,6 +68,7 @@ interface InventoryItem {
   sellPrice: number;
   commission: number;
   imageSrc?: string;
+  bookedDates?: string[];
 }
 
 interface BookingItem {
@@ -184,6 +185,33 @@ const HOLIDAY_SHOWCASE = [
 const IBAN_OWNER = "Mehmet Cihan Ferhatoğlu";
 const IBAN_NUMBER = "TR11 0004 9044 8275 9750 06";
 
+function formatIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getUpcomingDays(count = 21): { iso: string; dayNum: number; weekday: string; monthShort: string }[] {
+  const base = new Date();
+  base.setHours(12, 0, 0, 0);
+  const weekdays = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+  const months = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+
+  const list: { iso: string; dayNum: number; weekday: string; monthShort: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const dt = new Date(base);
+    dt.setDate(base.getDate() + i);
+    list.push({
+      iso: formatIsoDate(dt),
+      dayNum: dt.getDate(),
+      weekday: weekdays[dt.getDay()],
+      monthShort: months[dt.getMonth()],
+    });
+  }
+  return list;
+}
+
 function BrandLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const [imgError, setImgError] = useState(false);
 
@@ -257,6 +285,8 @@ function ShowcaseImage({
 }
 
 export default function TurizmSaaSPanel() {
+  const calendarDays = getUpcomingDays(21);
+
   const [tenants, setTenants] = useState<TenantAgency[]>([
     {
       id: "FIRM-AKDENIZ",
@@ -390,56 +420,65 @@ export default function TurizmSaaSPanel() {
   const [newSubPassword, setNewSubPassword] = useState("123");
   const [newSubTenantId, setNewSubTenantId] = useState("FIRM-AKDENIZ");
 
-  const [inventory, setInventory] = useState<InventoryItem[]>([
-    {
-      id: "HTL-01",
-      tenantId: "FIRM-AKDENIZ",
-      tenantName: "Akdeniz Turizm A.Ş.",
-      category: "OTEL",
-      title: "Kızkalesi Panorama Butik Otel",
-      quota: 6,
-      netPrice: 1200,
-      sellPrice: 1500,
-      commission: 300,
-      imageSrc: "/3.webp",
-    },
-    {
-      id: "TUR-03",
-      tenantId: "FIRM-AKDENIZ",
-      tenantName: "Akdeniz Turizm A.Ş.",
-      category: "TUR",
-      title: "Kapadokya Balon & Konaklama Turu",
-      quota: 12,
-      netPrice: 3500,
-      sellPrice: 4200,
-      commission: 700,
-      imageSrc: "/2.webp",
-    },
-    {
-      id: "PNS-02",
-      tenantId: "FIRM-ERDEMLI",
-      tenantName: "Erdemli & Silifke Travel",
-      category: "PANSİYON",
-      title: "Silifke Sahil Aile Pansiyonu",
-      quota: 9,
-      netPrice: 800,
-      sellPrice: 1000,
-      commission: 200,
-      imageSrc: "/5.png",
-    },
-    {
-      id: "DEM-01",
-      tenantId: "FIRM-DEMO",
-      tenantName: "Mersin Demo Acente",
-      category: "OTOBÜS",
-      title: "Mersin - Adana Transfer Kontenjanı",
-      quota: 8,
-      netPrice: 250,
-      sellPrice: 350,
-      commission: 100,
-      imageSrc: "/1.webp",
-    },
-  ]);
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const d2 = calendarDays[2]?.iso || "2026-11-23";
+    const d5 = calendarDays[5]?.iso || "2026-11-26";
+    const d8 = calendarDays[8]?.iso || "2026-11-29";
+    return [
+      {
+        id: "HTL-01",
+        tenantId: "FIRM-AKDENIZ",
+        tenantName: "Akdeniz Turizm A.Ş.",
+        category: "OTEL",
+        title: "Kızkalesi Panorama Butik Otel",
+        quota: 6,
+        netPrice: 1200,
+        sellPrice: 1500,
+        commission: 300,
+        imageSrc: "/3.webp",
+        bookedDates: [d2, d5],
+      },
+      {
+        id: "TUR-03",
+        tenantId: "FIRM-AKDENIZ",
+        tenantName: "Akdeniz Turizm A.Ş.",
+        category: "TUR",
+        title: "Kapadokya Balon & Konaklama Turu",
+        quota: 12,
+        netPrice: 3500,
+        sellPrice: 4200,
+        commission: 700,
+        imageSrc: "/2.webp",
+        bookedDates: [d5, d8],
+      },
+      {
+        id: "PNS-02",
+        tenantId: "FIRM-ERDEMLI",
+        tenantName: "Erdemli & Silifke Travel",
+        category: "PANSİYON",
+        title: "Silifke Sahil Aile Pansiyonu",
+        quota: 9,
+        netPrice: 800,
+        sellPrice: 1000,
+        commission: 200,
+        imageSrc: "/5.png",
+        bookedDates: [d2],
+      },
+      {
+        id: "DEM-01",
+        tenantId: "FIRM-DEMO",
+        tenantName: "Mersin Demo Acente",
+        category: "OTOBÜS",
+        title: "Mersin - Adana Transfer Kontenjanı",
+        quota: 8,
+        netPrice: 250,
+        sellPrice: 350,
+        commission: 100,
+        imageSrc: "/1.webp",
+        bookedDates: [d8],
+      },
+    ];
+  });
 
   const [bookings, setBookings] = useState<BookingItem[]>([
     {
@@ -475,11 +514,10 @@ export default function TurizmSaaSPanel() {
   ]);
 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [dateStepCompleted, setDateStepCompleted] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paxCount, setPaxCount] = useState(1);
-  const [travelDate, setTravelDate] = useState("2026-11-25");
+  const [travelDate, setTravelDate] = useState<string>("");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -606,7 +644,6 @@ export default function TurizmSaaSPanel() {
     setLoginError("");
     setLimitNotice("");
     setSelectedItem(null);
-    setDateStepCompleted(false);
     setIsAddModalOpen(false);
     setEditingItemId(null);
     setMobileMenuOpen(false);
@@ -902,6 +939,7 @@ export default function TurizmSaaSPanel() {
         sellPrice: newSellPrice,
         commission: computedCommission,
         imageSrc: finalImage,
+        bookedDates: [],
       };
 
       setInventory([newItem, ...inventory]);
@@ -923,26 +961,29 @@ export default function TurizmSaaSPanel() {
     setNewSellPrice(1300);
   };
 
-  // Rezervasyon Gir denildiğinde önce tarih kutusu açılır
+  // Normal rezervasyon formunu doğrudan aç ve ilk müsait tarihi seçili getir
   const openBookingModal = (item: InventoryItem) => {
+    const blocked = new Set(item.bookedDates || []);
+    const firstAvailable = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
     setSelectedItem(item);
-    setDateStepCompleted(false);
-    setTravelDate("2026-11-25");
+    setTravelDate(firstAvailable);
     setCustomerName("");
     setCustomerPhone("");
     setPaxCount(1);
     setLastCreatedBooking(null);
   };
 
-  const handleConfirmTravelDate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!travelDate) return;
-    setDateStepCompleted(true);
-  };
-
   const handleCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !selectedItem || !customerName.trim() || !customerPhone.trim()) return;
+    if (
+      !currentUser ||
+      !selectedItem ||
+      !travelDate ||
+      !customerName.trim() ||
+      !customerPhone.trim()
+    ) {
+      return;
+    }
 
     const randomPnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
     const cleanPhone = customerPhone.replace(/\D/g, "");
@@ -968,13 +1009,24 @@ export default function TurizmSaaSPanel() {
 
     setBookings([newBooking, ...bookings]);
 
+    const nextQuota = Math.max(0, selectedItem.quota - paxCount);
+    const nextBookedDates = Array.from(
+      new Set([...(selectedItem.bookedDates || []), travelDate])
+    );
+
     setInventory((prev) =>
       prev.map((inv) =>
         inv.id === selectedItem.id
-          ? { ...inv, quota: Math.max(0, inv.quota - paxCount) }
+          ? { ...inv, quota: nextQuota, bookedDates: nextBookedDates }
           : inv
       )
     );
+
+    setSelectedItem({
+      ...selectedItem,
+      quota: nextQuota,
+      bookedDates: nextBookedDates,
+    });
 
     setLastCreatedBooking(newBooking);
   };
@@ -1385,6 +1437,8 @@ export default function TurizmSaaSPanel() {
   const hierarchyTenants = isSuperAdmin
     ? tenants
     : tenants.filter((t) => t.id === currentUser.tenantId);
+
+  const blockedDatesSet = new Set(selectedItem?.bookedDates || []);
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
@@ -2209,115 +2263,84 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* REZERVASYON & PNR MODALI (ÖNCE TARİH KUTUSU AÇILIR) */}
+      {/* NORMAL REZERVASYON FORMU + MÜSAİTLİK TAKVİMİ */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
+          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
               <div className="flex items-center gap-2">
                 <Ticket className="w-5 h-5 text-indigo-400" />
                 <h3 className="font-bold text-white">Rezervasyon & PNR</h3>
               </div>
               <button
-                onClick={() => {
-                  setSelectedItem(null);
-                  setDateStepCompleted(false);
-                }}
+                onClick={() => setSelectedItem(null)}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {lastCreatedBooking ? (
-              <div className="text-center space-y-4 py-2">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-2xl font-mono font-bold text-white mt-1">
-                    {lastCreatedBooking.pnr}
-                  </h4>
-                </div>
-
-                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
-                  </p>
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span> •{" "}
-                    <span className="text-emerald-400 font-semibold">{lastCreatedBooking.date}</span>
-                  </p>
-                  <p className="text-slate-400">
-                    <span className="text-indigo-400 font-bold">
-                      {lastCreatedBooking.totalAmount} ₺
-                    </span>
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <Send className="w-4 h-4" /> WhatsApp Voucher Gönder
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setDateStepCompleted(false);
-                  }}
-                  className="w-full text-xs text-slate-400 hover:text-white py-2"
-                >
-                  Kapat
-                </button>
-              </div>
-            ) : !dateStepCompleted ? (
-              <form onSubmit={handleConfirmTravelDate} className="space-y-4">
+            {!lastCreatedBooking ? (
+              <form onSubmit={handleCreateReservation} className="space-y-4">
                 <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl">
                   <p className="text-xs text-indigo-400 font-semibold">
                     {selectedItem.tenantName} • {selectedItem.category}
                   </p>
                   <p className="text-sm font-bold text-white mt-0.5">{selectedItem.title}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    <span className="text-white font-semibold">{selectedItem.sellPrice} ₺</span> • Kalan:{" "}
+                    <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
+                  </p>
                 </div>
 
-                <div className="bg-[#080c16] border border-indigo-500/40 rounded-2xl p-4 space-y-2">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
-                    <Calendar className="w-4 h-4 text-indigo-400" /> Rezervasyon Tarihi Seçin
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    autoFocus
-                    value={travelDate}
-                    onChange={(e) => setTravelDate(e.target.value)}
-                    className="bg-[#0e1422] border border-slate-700 focus:border-indigo-400 rounded-xl px-3.5 py-2.5 text-sm text-white w-full focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
-                >
-                  Tarihi Onayla ve Devam Et
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleCreateReservation} className="space-y-4">
-                <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-bold text-white">{selectedItem.title}</p>
-                    <p className="text-xs text-emerald-400 font-semibold mt-0.5">
-                      Tarih: {travelDate}
-                    </p>
+                {/* TARİH BÖLÜMÜ: MÜSAİT OLANLAR KOYU/YEŞİL, SEÇİLMİŞ/DOLU OLANLAR GRİ VE TIKLANAMAZ */}
+                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-emerald-400" /> Tarih Seçin
+                    </label>
+                    <div className="flex items-center gap-2.5 text-[10px]">
+                      <span className="inline-flex items-center gap-1 text-emerald-300">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Müsait
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-slate-500">
+                        <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Dolu / Seçilmiş
+                      </span>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDateStepCompleted(false)}
-                    className="bg-[#0e1422] hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1.5 rounded-lg cursor-pointer shrink-0"
-                  >
-                    Tarihi Değiştir
-                  </button>
+
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {calendarDays.map((day) => {
+                      const isBlocked = blockedDatesSet.has(day.iso);
+                      const isSelected = travelDate === day.iso && !isBlocked;
+
+                      return (
+                        <button
+                          key={day.iso}
+                          type="button"
+                          disabled={isBlocked}
+                          onClick={() => setTravelDate(day.iso)}
+                          title={isBlocked ? `${day.iso} - Dolu / Seçilmiş` : `${day.iso} - Müsait`}
+                          className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
+                            isBlocked
+                              ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-65"
+                              : isSelected
+                              ? "bg-emerald-600 border-emerald-400 text-white font-bold shadow-sm cursor-pointer"
+                              : "bg-slate-800/90 hover:bg-emerald-500/20 border-emerald-500/30 text-white font-semibold cursor-pointer"
+                          }`}
+                        >
+                          <span className="text-[9px] opacity-75 leading-tight">{day.weekday}</span>
+                          <span className="text-xs leading-tight">{day.dayNum}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {travelDate && (
+                    <p className="text-[11px] text-emerald-400 font-mono">
+                      Seçili Tarih: <span className="font-bold">{travelDate}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2381,11 +2404,52 @@ export default function TurizmSaaSPanel() {
 
                 <button
                   type="submit"
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
+                  disabled={!travelDate}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
                 >
                   Onayla & PNR Üret
                 </button>
               </form>
+            ) : (
+              <div className="text-center space-y-4 py-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-2xl font-mono font-bold text-white mt-1">
+                    {lastCreatedBooking.pnr}
+                  </h4>
+                </div>
+
+                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
+                  <p className="text-slate-400">
+                    <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
+                  </p>
+                  <p className="text-slate-400">
+                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span> •{" "}
+                    <span className="text-emerald-400 font-semibold">{lastCreatedBooking.date}</span>
+                  </p>
+                  <p className="text-slate-400">
+                    <span className="text-indigo-400 font-bold">
+                      {lastCreatedBooking.totalAmount} ₺
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <Send className="w-4 h-4" /> WhatsApp Voucher Gönder
+                </button>
+
+                <button
+                  onClick={() => setSelectedItem(null)}
+                  className="w-full text-xs text-slate-400 hover:text-white py-2"
+                >
+                  Kapat
+                </button>
+              </div>
             )}
           </div>
         </div>
