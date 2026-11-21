@@ -81,7 +81,9 @@ interface BookingItem {
   customerPhone: string;
   itemTitle: string;
   pax: number;
-  date: string;
+  startDate: string;
+  endDate: string;
+  daysCount: number;
   totalAmount: number;
   commissionEarned: number;
   status: string;
@@ -192,7 +194,7 @@ const HOLIDAY_SHOWCASE = [
 const IBAN_OWNER = "Mehmet Cihan Ferhatoğlu";
 const IBAN_NUMBER = "TR11 0004 9044 8275 9750 06";
 
-const FALLBACK_CALENDAR_DAYS: CalendarDayItem[] = Array.from({ length: 21 }, (_, idx) => {
+const FALLBACK_CALENDAR_DAYS: CalendarDayItem[] = Array.from({ length: 28 }, (_, idx) => {
   const dayNum = idx + 1;
   const weekdays = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
   return {
@@ -210,7 +212,7 @@ function formatIsoDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-function buildUpcomingDays(count = 21): CalendarDayItem[] {
+function buildUpcomingDays(count = 28): CalendarDayItem[] {
   const base = new Date();
   base.setHours(12, 0, 0, 0);
   const weekdays = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
@@ -463,7 +465,7 @@ export default function TurizmSaaSPanel() {
       sellPrice: 1500,
       commission: 300,
       imageSrc: "/3.webp",
-      bookedDates: ["2026-12-03", "2026-12-06"],
+      bookedDates: ["2026-12-05", "2026-12-06", "2026-12-12"],
     },
     {
       id: "TUR-03",
@@ -476,7 +478,7 @@ export default function TurizmSaaSPanel() {
       sellPrice: 4200,
       commission: 700,
       imageSrc: "/2.webp",
-      bookedDates: ["2026-12-06", "2026-12-09"],
+      bookedDates: ["2026-12-08", "2026-12-09"],
     },
     {
       id: "PNS-02",
@@ -489,7 +491,7 @@ export default function TurizmSaaSPanel() {
       sellPrice: 1000,
       commission: 200,
       imageSrc: "/5.png",
-      bookedDates: ["2026-12-03"],
+      bookedDates: ["2026-12-04"],
     },
     {
       id: "DEM-01",
@@ -502,24 +504,24 @@ export default function TurizmSaaSPanel() {
       sellPrice: 350,
       commission: 100,
       imageSrc: "/1.webp",
-      bookedDates: ["2026-12-09"],
+      bookedDates: ["2026-12-10"],
     },
   ]);
 
   useEffect(() => {
-    const days = buildUpcomingDays(21);
+    const days = buildUpcomingDays(28);
     setCalendarDays(days);
 
-    const d2 = days[2]?.iso;
+    const d4 = days[4]?.iso;
     const d5 = days[5]?.iso;
-    const d8 = days[8]?.iso;
-    if (d2 && d5 && d8) {
+    const d11 = days[11]?.iso;
+    if (d4 && d5 && d11) {
       setInventory((prev) =>
         prev.map((item, idx) => {
-          if (idx === 0) return { ...item, bookedDates: [d2, d5] };
-          if (idx === 1) return { ...item, bookedDates: [d5, d8] };
-          if (idx === 2) return { ...item, bookedDates: [d2] };
-          if (idx === 3) return { ...item, bookedDates: [d8] };
+          if (idx === 0) return { ...item, bookedDates: [d4, d5, d11] };
+          if (idx === 1) return { ...item, bookedDates: [d5, d11] };
+          if (idx === 2) return { ...item, bookedDates: [d4] };
+          if (idx === 3) return { ...item, bookedDates: [d11] };
           return item;
         })
       );
@@ -537,9 +539,11 @@ export default function TurizmSaaSPanel() {
       customerPhone: "905551112233",
       itemTitle: "Kızkalesi Panorama Butik Otel",
       pax: 1,
-      date: "2026-11-22",
-      totalAmount: 1500,
-      commissionEarned: 300,
+      startDate: "2026-11-22",
+      endDate: "2026-11-24",
+      daysCount: 3,
+      totalAmount: 4500,
+      commissionEarned: 900,
       status: "Onaylandı",
     },
     {
@@ -552,9 +556,11 @@ export default function TurizmSaaSPanel() {
       customerPhone: "905557778899",
       itemTitle: "Silifke Sahil Aile Pansiyonu",
       pax: 1,
-      date: "2026-11-26",
-      totalAmount: 1000,
-      commissionEarned: 200,
+      startDate: "2026-11-26",
+      endDate: "2026-11-27",
+      daysCount: 2,
+      totalAmount: 2000,
+      commissionEarned: 400,
       status: "Onaylandı",
     },
   ]);
@@ -563,7 +569,9 @@ export default function TurizmSaaSPanel() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paxCount, setPaxCount] = useState(1);
-  const [travelDate, setTravelDate] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [rangeWarning, setRangeWarning] = useState<string>("");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1011,24 +1019,79 @@ export default function TurizmSaaSPanel() {
     const blocked = new Set(item.bookedDates || []);
     const firstAvailable = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
     setSelectedItem(item);
-    setTravelDate(firstAvailable);
+    setStartDate(firstAvailable);
+    setEndDate(firstAvailable);
+    setRangeWarning("");
     setCustomerName("");
     setCustomerPhone("");
     setPaxCount(1);
     setLastCreatedBooking(null);
   };
 
+  const handleSelectCalendarDay = (clickedIso: string) => {
+    if (!selectedItem) return;
+    const blocked = new Set(selectedItem.bookedDates || []);
+    if (blocked.has(clickedIso)) return;
+
+    setRangeWarning("");
+
+    // İlk seçim veya önceki aralık tamamlanmışsa yeni başlangıç tarihi başlat
+    if (!startDate || (startDate && endDate && startDate !== endDate) || clickedIso < startDate) {
+      setStartDate(clickedIso);
+      setEndDate(clickedIso);
+      return;
+    }
+
+    // Aynı güne tekrar basılırsa tek gün seçili kalsın
+    if (clickedIso === startDate) {
+      setEndDate(clickedIso);
+      return;
+    }
+
+    // startDate -> clickedIso arasında dolu/engelli gün var mı kontrol et
+    const startIdx = calendarDays.findIndex((d) => d.iso === startDate);
+    const endIdx = calendarDays.findIndex((d) => d.iso === clickedIso);
+
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      const slice = calendarDays.slice(startIdx, endIdx + 1);
+      const hasBlockedInBetween = slice.some((d) => blocked.has(d.iso));
+      if (hasBlockedInBetween) {
+        setRangeWarning("Seçtiğiniz aralıkta dolu tarih var. Yeni başlangıç tarihi seçildi.");
+        setStartDate(clickedIso);
+        setEndDate(clickedIso);
+        return;
+      }
+    }
+
+    setEndDate(clickedIso);
+  };
+
+  // Seçili aralıktaki günlerin listesi ve sayısı
+  const selectedRangeIsos: string[] = (() => {
+    if (!startDate) return [];
+    const effectiveEnd = endDate && endDate >= startDate ? endDate : startDate;
+    const startIdx = calendarDays.findIndex((d) => d.iso === startDate);
+    const endIdx = calendarDays.findIndex((d) => d.iso === effectiveEnd);
+    if (startIdx === -1 || endIdx === -1) return [startDate];
+    return calendarDays.slice(startIdx, endIdx + 1).map((d) => d.iso);
+  })();
+
+  const selectedDaysCount = Math.max(1, selectedRangeIsos.length);
+
   const handleCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
     if (
       !currentUser ||
       !selectedItem ||
-      !travelDate ||
+      !startDate ||
       !customerName.trim() ||
       !customerPhone.trim()
     ) {
       return;
     }
+
+    const effectiveEnd = endDate && endDate >= startDate ? endDate : startDate;
+    const daysMultiplier = selectedDaysCount;
 
     const randomPnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
     const cleanPhone = customerPhone.replace(/\D/g, "");
@@ -1046,9 +1109,11 @@ export default function TurizmSaaSPanel() {
       customerPhone: formattedPhone,
       itemTitle: selectedItem.title,
       pax: paxCount,
-      date: travelDate,
-      totalAmount: selectedItem.sellPrice * paxCount,
-      commissionEarned: selectedItem.commission * paxCount,
+      startDate,
+      endDate: effectiveEnd,
+      daysCount: daysMultiplier,
+      totalAmount: selectedItem.sellPrice * paxCount * daysMultiplier,
+      commissionEarned: selectedItem.commission * paxCount * daysMultiplier,
       status: "Onaylandı",
     };
 
@@ -1056,7 +1121,7 @@ export default function TurizmSaaSPanel() {
 
     const nextQuota = Math.max(0, selectedItem.quota - paxCount);
     const nextBookedDates = Array.from(
-      new Set([...(selectedItem.bookedDates || []), travelDate])
+      new Set([...(selectedItem.bookedDates || []), ...selectedRangeIsos])
     );
 
     setInventory((prev) =>
@@ -1077,13 +1142,18 @@ export default function TurizmSaaSPanel() {
   };
 
   const sendWhatsAppVoucher = (b: BookingItem) => {
+    const dateLabel =
+      b.startDate === b.endDate
+        ? `${b.startDate} (1 Gün)`
+        : `${b.startDate} → ${b.endDate} (${b.daysCount} Gün)`;
+
     const voucherText =
       `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
       `----------------------------------\n` +
       `*PNR Kodu:* ${b.pnr}\n` +
       `*Misafir:* ${b.customerName}\n` +
       `*Hizmet:* ${b.itemTitle}\n` +
-      `*Tarih:* ${b.date}\n` +
+      `*Tarih Aralığı:* ${dateLabel}\n` +
       `*Kişi / Adet:* ${b.pax}\n` +
       `*Toplam Tutar:* ${b.totalAmount} ₺\n` +
       `*Durum:* ${b.status}\n` +
@@ -1476,6 +1546,7 @@ export default function TurizmSaaSPanel() {
     : tenants.filter((t) => t.id === currentUser.tenantId);
 
   const blockedDatesSet = new Set(selectedItem?.bookedDates || []);
+  const selectedRangeSet = new Set(selectedRangeIsos);
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
@@ -1716,7 +1787,7 @@ export default function TurizmSaaSPanel() {
                             </div>
                           )}
                           <div className="flex justify-between gap-2">
-                            <span className="text-slate-400">Satış:</span>
+                            <span className="text-slate-400">Satış (Günlük):</span>
                             <span className="font-bold text-indigo-400">{item.sellPrice} ₺</span>
                           </div>
                           {!isSuperAdmin && (
@@ -2082,14 +2153,14 @@ export default function TurizmSaaSPanel() {
                 <h2 className="text-base sm:text-lg font-bold text-white">PNR & Voucher</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[660px]">
+                <table className="w-full text-left text-sm min-w-[700px]">
                   <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                     <tr>
                       <th className="p-4">PNR</th>
                       <th className="p-4">Acente</th>
                       <th className="p-4">Misafir</th>
                       <th className="p-4">Hizmet</th>
-                      <th className="p-4">Tarih / Kişi</th>
+                      <th className="p-4">Tarih Aralığı / Adet</th>
                       <th className="p-4">Tutar</th>
                       {!isSuperAdmin && <th className="p-4">Komisyon</th>}
                       <th className="p-4">İşlem</th>
@@ -2105,8 +2176,15 @@ export default function TurizmSaaSPanel() {
                         </td>
                         <td className="p-4 font-medium text-white">{b.customerName}</td>
                         <td className="p-4 text-slate-300">{b.itemTitle}</td>
-                        <td className="p-4 text-slate-400 text-xs">
-                          {b.date} • {b.pax}
+                        <td className="p-4 text-slate-300 text-xs">
+                          <span className="text-emerald-400 font-semibold block">
+                            {b.startDate === b.endDate
+                              ? b.startDate
+                              : `${b.startDate} → ${b.endDate}`}
+                          </span>
+                          <span className="text-slate-400">
+                            {b.daysCount} Gün • {b.pax} Adet
+                          </span>
                         </td>
                         <td className="p-4 font-semibold text-white">{b.totalAmount} ₺</td>
                         {!isSuperAdmin && (
@@ -2316,22 +2394,39 @@ export default function TurizmSaaSPanel() {
                   </p>
                   <p className="text-sm font-bold text-white mt-0.5">{selectedItem.title}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    <span className="text-white font-semibold">{selectedItem.sellPrice} ₺</span> • Kalan:{" "}
+                    <span className="text-white font-semibold">{selectedItem.sellPrice} ₺ / Gün</span> • Kalan:{" "}
                     <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
                   </p>
                 </div>
 
+                {/* BAŞLANGIÇ & BİTİŞ TARİH ARALIĞI SEÇİCİ */}
                 <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
-                      <Calendar className="w-4 h-4 text-emerald-400" /> Tarih Seçin
+                      <Calendar className="w-4 h-4 text-emerald-400" /> Başlangıç & Bitiş Tarihi
                     </label>
-                    <div className="flex items-center gap-2.5 text-[10px]">
+                    <div className="flex items-center gap-2 text-[10px]">
                       <span className="inline-flex items-center gap-1 text-emerald-300">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Müsait
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Seçili
                       </span>
                       <span className="inline-flex items-center gap-1 text-slate-500">
-                        <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Dolu / Seçilmiş
+                        <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Dolu
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Başlangıç ve Bitiş Özeti */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
+                      <span className="block text-[10px] text-slate-400">Başlangıç Tarihi</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">
+                        {startDate || "Seçiniz"}
+                      </span>
+                    </div>
+                    <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
+                      <span className="block text-[10px] text-slate-400">Bitiş Tarihi</span>
+                      <span className="text-xs font-mono font-bold text-emerald-400">
+                        {endDate || startDate || "Seçiniz"}
                       </span>
                     </div>
                   </div>
@@ -2339,21 +2434,25 @@ export default function TurizmSaaSPanel() {
                   <div className="grid grid-cols-7 gap-1.5">
                     {calendarDays.map((day) => {
                       const isBlocked = blockedDatesSet.has(day.iso);
-                      const isSelected = travelDate === day.iso && !isBlocked;
+                      const isInRange = !isBlocked && selectedRangeSet.has(day.iso);
+                      const isStartOrEnd =
+                        !isBlocked && (day.iso === startDate || day.iso === endDate);
 
                       return (
                         <button
                           key={day.iso}
                           type="button"
                           disabled={isBlocked}
-                          onClick={() => setTravelDate(day.iso)}
+                          onClick={() => handleSelectCalendarDay(day.iso)}
                           title={isBlocked ? `${day.iso} - Dolu / Seçilmiş` : `${day.iso} - Müsait`}
                           className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
                             isBlocked
-                              ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-65"
-                              : isSelected
-                              ? "bg-emerald-600 border-emerald-400 text-white font-bold shadow-sm cursor-pointer"
-                              : "bg-slate-800/90 hover:bg-emerald-500/20 border-emerald-500/30 text-white font-semibold cursor-pointer"
+                              ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
+                              : isStartOrEnd
+                              ? "bg-emerald-600 border-emerald-300 text-white font-bold shadow-sm cursor-pointer"
+                              : isInRange
+                              ? "bg-emerald-500/35 border-emerald-400/70 text-emerald-100 font-semibold cursor-pointer"
+                              : "bg-slate-800/90 hover:bg-emerald-500/20 border-slate-700 text-white font-medium cursor-pointer"
                           }`}
                         >
                           <span className="text-[9px] opacity-75 leading-tight">{day.weekday}</span>
@@ -2363,9 +2462,18 @@ export default function TurizmSaaSPanel() {
                     })}
                   </div>
 
-                  {travelDate && (
+                  {rangeWarning && (
+                    <p className="text-[11px] text-amber-400">{rangeWarning}</p>
+                  )}
+
+                  {startDate && (
                     <p className="text-[11px] text-emerald-400 font-mono">
-                      Seçili Tarih: <span className="font-bold">{travelDate}</span>
+                      Seçili Aralık:{" "}
+                      <span className="font-bold">
+                        {startDate === (endDate || startDate)
+                          ? `${startDate} (1 Gün)`
+                          : `${startDate} → ${endDate} (${selectedDaysCount} Gün)`}
+                      </span>
                     </p>
                   )}
                 </div>
@@ -2416,14 +2524,18 @@ export default function TurizmSaaSPanel() {
 
                 <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
                   <div>
-                    <p className="text-xs text-slate-400">Tutar</p>
-                    <p className="text-lg font-bold text-white">{selectedItem.sellPrice * paxCount} ₺</p>
+                    <p className="text-xs text-slate-400">
+                      Tutar ({selectedDaysCount} Gün × {paxCount} Adet)
+                    </p>
+                    <p className="text-lg font-bold text-white">
+                      {selectedItem.sellPrice * paxCount * selectedDaysCount} ₺
+                    </p>
                   </div>
                   {!isSuperAdmin && (
                     <div className="text-right">
                       <p className="text-xs text-slate-400">Komisyon</p>
                       <p className="text-sm font-bold text-emerald-400">
-                        +{selectedItem.commission * paxCount} ₺
+                        +{selectedItem.commission * paxCount * selectedDaysCount} ₺
                       </p>
                     </div>
                   )}
@@ -2431,7 +2543,7 @@ export default function TurizmSaaSPanel() {
 
                 <button
                   type="submit"
-                  disabled={!travelDate}
+                  disabled={!startDate}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
                 >
                   Onayla & PNR Üret
@@ -2453,8 +2565,12 @@ export default function TurizmSaaSPanel() {
                     <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
                   </p>
                   <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span> •{" "}
-                    <span className="text-emerald-400 font-semibold">{lastCreatedBooking.date}</span>
+                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
+                  </p>
+                  <p className="text-emerald-400 font-semibold">
+                    {lastCreatedBooking.startDate === lastCreatedBooking.endDate
+                      ? `${lastCreatedBooking.startDate} (1 Gün)`
+                      : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.daysCount} Gün)`}
                   </p>
                   <p className="text-slate-400">
                     <span className="text-indigo-400 font-bold">
