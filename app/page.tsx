@@ -31,6 +31,7 @@ import {
   Palmtree,
   Pencil,
   ImagePlus,
+  Clock,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
@@ -83,7 +84,7 @@ interface BookingItem {
   pax: number;
   startDate: string;
   endDate: string;
-  daysCount: number;
+  chargedDays: number;
   totalAmount: number;
   commissionEarned: number;
   status: string;
@@ -108,6 +109,9 @@ interface CalendarDayItem {
   weekday: string;
   monthShort: string;
 }
+
+const CHECK_IN_RULE = "Giriş: 12:00 sonrası";
+const CHECK_OUT_RULE = "Çıkış / Oda boşaltma: 10:00 öncesi";
 
 const PLAN_SPECS: Record<PlanType, PlanSpec> = {
   Trial: {
@@ -541,9 +545,9 @@ export default function TurizmSaaSPanel() {
       pax: 1,
       startDate: "2026-11-22",
       endDate: "2026-11-24",
-      daysCount: 3,
-      totalAmount: 4500,
-      commissionEarned: 900,
+      chargedDays: 2,
+      totalAmount: 3000,
+      commissionEarned: 600,
       status: "Onaylandı",
     },
     {
@@ -558,9 +562,9 @@ export default function TurizmSaaSPanel() {
       pax: 1,
       startDate: "2026-11-26",
       endDate: "2026-11-27",
-      daysCount: 2,
-      totalAmount: 2000,
-      commissionEarned: 400,
+      chargedDays: 1,
+      totalAmount: 1000,
+      commissionEarned: 200,
       status: "Onaylandı",
     },
   ]);
@@ -1035,20 +1039,17 @@ export default function TurizmSaaSPanel() {
 
     setRangeWarning("");
 
-    // İlk seçim veya önceki aralık tamamlanmışsa yeni başlangıç tarihi başlat
     if (!startDate || (startDate && endDate && startDate !== endDate) || clickedIso < startDate) {
       setStartDate(clickedIso);
       setEndDate(clickedIso);
       return;
     }
 
-    // Aynı güne tekrar basılırsa tek gün seçili kalsın
     if (clickedIso === startDate) {
       setEndDate(clickedIso);
       return;
     }
 
-    // startDate -> clickedIso arasında dolu/engelli gün var mı kontrol et
     const startIdx = calendarDays.findIndex((d) => d.iso === startDate);
     const endIdx = calendarDays.findIndex((d) => d.iso === clickedIso);
 
@@ -1066,7 +1067,6 @@ export default function TurizmSaaSPanel() {
     setEndDate(clickedIso);
   };
 
-  // Seçili aralıktaki günlerin listesi ve sayısı
   const selectedRangeIsos: string[] = (() => {
     if (!startDate) return [];
     const effectiveEnd = endDate && endDate >= startDate ? endDate : startDate;
@@ -1076,7 +1076,14 @@ export default function TurizmSaaSPanel() {
     return calendarDays.slice(startIdx, endIdx + 1).map((d) => d.iso);
   })();
 
-  const selectedDaysCount = Math.max(1, selectedRangeIsos.length);
+  const effectiveEndDate = startDate ? (endDate && endDate >= startDate ? endDate : startDate) : "";
+  const hasCheckoutDay = Boolean(startDate && effectiveEndDate && effectiveEndDate > startDate);
+
+  // Son gün çıkış günü olduğu için fiyata dahil edilmez (en az 1 gün/gece ücretlendirilir)
+  const chargedDaysCount = Math.max(
+    1,
+    hasCheckoutDay ? selectedRangeIsos.length - 1 : selectedRangeIsos.length
+  );
 
   const handleCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1090,9 +1097,7 @@ export default function TurizmSaaSPanel() {
       return;
     }
 
-    const effectiveEnd = endDate && endDate >= startDate ? endDate : startDate;
-    const daysMultiplier = selectedDaysCount;
-
+    const finalEndDate = effectiveEndDate || startDate;
     const randomPnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
     const cleanPhone = customerPhone.replace(/\D/g, "");
     const formattedPhone = cleanPhone.startsWith("90")
@@ -1110,10 +1115,10 @@ export default function TurizmSaaSPanel() {
       itemTitle: selectedItem.title,
       pax: paxCount,
       startDate,
-      endDate: effectiveEnd,
-      daysCount: daysMultiplier,
-      totalAmount: selectedItem.sellPrice * paxCount * daysMultiplier,
-      commissionEarned: selectedItem.commission * paxCount * daysMultiplier,
+      endDate: finalEndDate,
+      chargedDays: chargedDaysCount,
+      totalAmount: selectedItem.sellPrice * paxCount * chargedDaysCount,
+      commissionEarned: selectedItem.commission * paxCount * chargedDaysCount,
       status: "Onaylandı",
     };
 
@@ -1144,8 +1149,8 @@ export default function TurizmSaaSPanel() {
   const sendWhatsAppVoucher = (b: BookingItem) => {
     const dateLabel =
       b.startDate === b.endDate
-        ? `${b.startDate} (1 Gün)`
-        : `${b.startDate} → ${b.endDate} (${b.daysCount} Gün)`;
+        ? `${b.startDate} (${b.chargedDays} Gün)`
+        : `${b.startDate} → ${b.endDate} (Fiyata Dahil: ${b.chargedDays} Gün; Son gün çıkış)`;
 
     const voucherText =
       `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
@@ -1154,6 +1159,7 @@ export default function TurizmSaaSPanel() {
       `*Misafir:* ${b.customerName}\n` +
       `*Hizmet:* ${b.itemTitle}\n` +
       `*Tarih Aralığı:* ${dateLabel}\n` +
+      `*Saat Kuralı:* ${CHECK_IN_RULE} | ${CHECK_OUT_RULE}\n` +
       `*Kişi / Adet:* ${b.pax}\n` +
       `*Toplam Tutar:* ${b.totalAmount} ₺\n` +
       `*Durum:* ${b.status}\n` +
@@ -1721,7 +1727,7 @@ export default function TurizmSaaSPanel() {
                     Kontenjan & Satış Havuzu
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                    {PLAN_SPECS[currentPlan].summary}
+                    {PLAN_SPECS[currentPlan].summary} • {CHECK_IN_RULE} • {CHECK_OUT_RULE}
                   </p>
                 </div>
 
@@ -2149,8 +2155,11 @@ export default function TurizmSaaSPanel() {
 
           {activeTab === "bookings" && (
             <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-4 sm:p-5 border-b border-slate-800">
+              <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white">PNR & Voucher</h2>
+                <span className="text-[11px] text-slate-400">
+                  {CHECK_IN_RULE} • {CHECK_OUT_RULE}
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm min-w-[700px]">
@@ -2183,7 +2192,7 @@ export default function TurizmSaaSPanel() {
                               : `${b.startDate} → ${b.endDate}`}
                           </span>
                           <span className="text-slate-400">
-                            {b.daysCount} Gün • {b.pax} Adet
+                            {b.chargedDays} Gün • {b.pax} Adet
                           </span>
                         </td>
                         <td className="p-4 font-semibold text-white">{b.totalAmount} ₺</td>
@@ -2388,15 +2397,22 @@ export default function TurizmSaaSPanel() {
 
             {!lastCreatedBooking ? (
               <form onSubmit={handleCreateReservation} className="space-y-4">
-                <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl">
+                <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl space-y-1.5">
                   <p className="text-xs text-indigo-400 font-semibold">
                     {selectedItem.tenantName} • {selectedItem.category}
                   </p>
-                  <p className="text-sm font-bold text-white mt-0.5">{selectedItem.title}</p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-sm font-bold text-white">{selectedItem.title}</p>
+                  <p className="text-xs text-slate-400">
                     <span className="text-white font-semibold">{selectedItem.sellPrice} ₺ / Gün</span> • Kalan:{" "}
                     <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
                   </p>
+                  <div className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-300">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-emerald-400" /> {CHECK_IN_RULE}
+                    </span>
+                    <span>•</span>
+                    <span>{CHECK_OUT_RULE}</span>
+                  </div>
                 </div>
 
                 {/* BAŞLANGIÇ & BİTİŞ TARİH ARALIĞI SEÇİCİ */}
@@ -2418,15 +2434,19 @@ export default function TurizmSaaSPanel() {
                   {/* Başlangıç ve Bitiş Özeti */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
-                      <span className="block text-[10px] text-slate-400">Başlangıç Tarihi</span>
+                      <span className="block text-[10px] text-slate-400">
+                        Başlangıç (Giriş &gt; 12:00)
+                      </span>
                       <span className="text-xs font-mono font-bold text-emerald-400">
                         {startDate || "Seçiniz"}
                       </span>
                     </div>
                     <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
-                      <span className="block text-[10px] text-slate-400">Bitiş Tarihi</span>
+                      <span className="block text-[10px] text-slate-400">
+                        Bitiş (Çıkış &lt; 10:00)
+                      </span>
                       <span className="text-xs font-mono font-bold text-emerald-400">
-                        {endDate || startDate || "Seçiniz"}
+                        {effectiveEndDate || "Seçiniz"}
                       </span>
                     </div>
                   </div>
@@ -2436,7 +2456,9 @@ export default function TurizmSaaSPanel() {
                       const isBlocked = blockedDatesSet.has(day.iso);
                       const isInRange = !isBlocked && selectedRangeSet.has(day.iso);
                       const isStartOrEnd =
-                        !isBlocked && (day.iso === startDate || day.iso === endDate);
+                        !isBlocked && (day.iso === startDate || day.iso === effectiveEndDate);
+                      const isCheckoutOnlyDay =
+                        hasCheckoutDay && day.iso === effectiveEndDate && !isBlocked;
 
                       return (
                         <button
@@ -2444,7 +2466,13 @@ export default function TurizmSaaSPanel() {
                           type="button"
                           disabled={isBlocked}
                           onClick={() => handleSelectCalendarDay(day.iso)}
-                          title={isBlocked ? `${day.iso} - Dolu / Seçilmiş` : `${day.iso} - Müsait`}
+                          title={
+                            isBlocked
+                              ? `${day.iso} - Dolu / Seçilmiş`
+                              : isCheckoutOnlyDay
+                              ? `${day.iso} - Çıkış Günü (<10:00, fiyata dahil değil)`
+                              : `${day.iso} - Müsait`
+                          }
                           className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
                             isBlocked
                               ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
@@ -2457,6 +2485,11 @@ export default function TurizmSaaSPanel() {
                         >
                           <span className="text-[9px] opacity-75 leading-tight">{day.weekday}</span>
                           <span className="text-xs leading-tight">{day.dayNum}</span>
+                          {isCheckoutOnlyDay && (
+                            <span className="text-[8px] font-bold text-emerald-200 leading-none mt-0.5">
+                              Çıkış
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -2467,14 +2500,21 @@ export default function TurizmSaaSPanel() {
                   )}
 
                   {startDate && (
-                    <p className="text-[11px] text-emerald-400 font-mono">
-                      Seçili Aralık:{" "}
-                      <span className="font-bold">
-                        {startDate === (endDate || startDate)
-                          ? `${startDate} (1 Gün)`
-                          : `${startDate} → ${endDate} (${selectedDaysCount} Gün)`}
-                      </span>
-                    </p>
+                    <div className="text-[11px] text-emerald-400 font-mono space-y-0.5">
+                      <p>
+                        Aralık:{" "}
+                        <span className="font-bold">
+                          {startDate === effectiveEndDate
+                            ? `${startDate} (1 Gün)`
+                            : `${startDate} → ${effectiveEndDate}`}
+                        </span>
+                      </p>
+                      <p className="text-slate-300 font-sans">
+                        Fiyata dahil süre:{" "}
+                        <span className="text-emerald-400 font-bold">{chargedDaysCount} Gün</span>
+                        {hasCheckoutDay ? " (son gün çıkış günü olduğu için fiyata dahil değil)" : ""}
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -2525,17 +2565,17 @@ export default function TurizmSaaSPanel() {
                 <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
                   <div>
                     <p className="text-xs text-slate-400">
-                      Tutar ({selectedDaysCount} Gün × {paxCount} Adet)
+                      Tutar ({chargedDaysCount} Gün × {paxCount} Adet)
                     </p>
                     <p className="text-lg font-bold text-white">
-                      {selectedItem.sellPrice * paxCount * selectedDaysCount} ₺
+                      {selectedItem.sellPrice * paxCount * chargedDaysCount} ₺
                     </p>
                   </div>
                   {!isSuperAdmin && (
                     <div className="text-right">
                       <p className="text-xs text-slate-400">Komisyon</p>
                       <p className="text-sm font-bold text-emerald-400">
-                        +{selectedItem.commission * paxCount * selectedDaysCount} ₺
+                        +{selectedItem.commission * paxCount * chargedDaysCount} ₺
                       </p>
                     </div>
                   )}
@@ -2569,8 +2609,11 @@ export default function TurizmSaaSPanel() {
                   </p>
                   <p className="text-emerald-400 font-semibold">
                     {lastCreatedBooking.startDate === lastCreatedBooking.endDate
-                      ? `${lastCreatedBooking.startDate} (1 Gün)`
-                      : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.daysCount} Gün)`}
+                      ? `${lastCreatedBooking.startDate} (${lastCreatedBooking.chargedDays} Gün)`
+                      : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.chargedDays} Gün Ücretlendirildi)`}
+                  </p>
+                  <p className="text-slate-400">
+                    {CHECK_IN_RULE} • {CHECK_OUT_RULE}
                   </p>
                   <p className="text-slate-400">
                     <span className="text-indigo-400 font-bold">
