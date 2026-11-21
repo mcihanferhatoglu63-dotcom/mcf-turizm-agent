@@ -244,30 +244,27 @@ const FALLBACK_CALENDAR_DAYS: CalendarDayItem[] = Array.from({ length: 28 }, (_,
 });
 
 function formatIsoDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
-function addDaysIso(daysFromNow: number): string {
-  const dt = new Date();
-  dt.setHours(12, 0, 0, 0);
-  dt.setDate(dt.getDate() + daysFromNow);
+function addDaysIso(daysFromNow: number, baseIso = "2026-11-21"): string {
+  const dt = new Date(`${baseIso}T12:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + daysFromNow);
   return formatIsoDate(dt);
 }
 
-function calcRemainingDays(isoDate: string): number {
-  const target = new Date(`${isoDate}T12:00:00`);
-  const now = new Date();
-  now.setHours(12, 0, 0, 0);
-  const diff = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+function calcRemainingDays(isoDate: string, refIso = "2026-11-21"): number {
+  const target = new Date(`${isoDate}T12:00:00Z`).getTime();
+  const now = new Date(`${refIso}T12:00:00Z`).getTime();
+  const diff = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
   return Math.max(0, diff);
 }
 
-function buildUpcomingDays(count = 28): CalendarDayItem[] {
-  const base = new Date();
-  base.setHours(12, 0, 0, 0);
+function buildUpcomingDays(count = 28, startIso = "2026-11-21"): CalendarDayItem[] {
+  const base = new Date(`${startIso}T12:00:00Z`);
   const weekdays = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
   const months = [
     "Oca",
@@ -287,12 +284,12 @@ function buildUpcomingDays(count = 28): CalendarDayItem[] {
   const list: CalendarDayItem[] = [];
   for (let i = 0; i < count; i++) {
     const dt = new Date(base);
-    dt.setDate(base.getDate() + i);
+    dt.setUTCDate(base.getUTCDate() + i);
     list.push({
       iso: formatIsoDate(dt),
-      dayNum: dt.getDate(),
-      weekday: weekdays[dt.getDay()],
-      monthShort: months[dt.getMonth()],
+      dayNum: dt.getUTCDate(),
+      weekday: weekdays[dt.getUTCDay()],
+      monthShort: months[dt.getUTCMonth()],
     });
   }
   return list;
@@ -377,9 +374,9 @@ function ShowcaseImage({
 }
 
 export default function TurizmSaaSPanel() {
+  const [todayIso, setTodayIso] = useState<string>("2026-11-21");
   const [calendarDays, setCalendarDays] = useState<CalendarDayItem[]>(FALLBACK_CALENDAR_DAYS);
 
-  // Kalıcı Veritabanı (Firebase Realtime Database + LocalStorage) durumları
   const [firebaseDbUrl, setFirebaseDbUrl] = useState<string>(DEFAULT_ENV_DB_URL);
   const [dbUrlInput, setDbUrlInput] = useState<string>(DEFAULT_ENV_DB_URL);
   const [dbStatus, setDbStatus] = useState<"local" | "connected" | "syncing" | "error">("local");
@@ -637,9 +634,10 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  // Takvim + Kalıcı Veri Yükleme (LocalStorage + Firebase RTDB)
   useEffect(() => {
-    const days = buildUpcomingDays(28);
+    const clientToday = formatIsoDate(new Date());
+    setTodayIso(clientToday);
+    const days = buildUpcomingDays(28, clientToday);
     setCalendarDays(days);
 
     const d4 = days[4]?.iso;
@@ -707,7 +705,6 @@ export default function TurizmSaaSPanel() {
     }
   }, []);
 
-  // Değişiklikleri LocalStorage ve Firebase Realtime Database'e kalıcı kaydet
   useEffect(() => {
     if (!hydrated) return;
 
@@ -797,7 +794,6 @@ export default function TurizmSaaSPanel() {
       .catch(() => setDbStatus("error"));
   };
 
-  // Rezervasyon modal state'leri
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [guestNames, setGuestNames] = useState<string[]>([""]);
   const [freeChildCount, setFreeChildCount] = useState<number>(0);
@@ -813,7 +809,6 @@ export default function TurizmSaaSPanel() {
   const [rangeWarning, setRangeWarning] = useState<string>("");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
-  // Tarih düzenleme & Yazdırılabilir Voucher modal state'leri
   const [rescheduleTarget, setRescheduleTarget] = useState<BookingItem | null>(null);
   const [rescheduleStart, setRescheduleStart] = useState("");
   const [rescheduleEnd, setRescheduleEnd] = useState("");
@@ -821,7 +816,6 @@ export default function TurizmSaaSPanel() {
   const [reschedulePaid, setReschedulePaid] = useState<number>(0);
   const [printVoucherBooking, setPrintVoucherBooking] = useState<BookingItem | null>(null);
 
-  // Kontenjan ekleme/düzenleme modal state'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [newCategory, setNewCategory] = useState("TUR");
@@ -979,7 +973,7 @@ export default function TurizmSaaSPanel() {
               plan: nextPlan,
               status: nextPlan === "Trial" ? "Deneme" : "Aktif",
               editCount: 0,
-              expiresAt: addDaysIso(daysByPlan),
+              expiresAt: addDaysIso(daysByPlan, todayIso),
             }
           : t
       )
@@ -1017,7 +1011,7 @@ export default function TurizmSaaSPanel() {
       revenue: "0 ₺",
       status: newAgencyPlan === "Trial" ? "Deneme" : "Aktif",
       editCount: 0,
-      expiresAt: addDaysIso(newAgencyPlan === "Trial" ? 14 : 30),
+      expiresAt: addDaysIso(newAgencyPlan === "Trial" ? 14 : 30, todayIso),
       checkInTime: "12:00",
       checkOutTime: "10:00",
       currency: "₺",
@@ -1418,11 +1412,9 @@ export default function TurizmSaaSPanel() {
     hasCheckoutDay ? selectedRangeIsos.length - 1 : selectedRangeIsos.length
   );
 
-  // 13+ yetişkin tam fiyat, 7-12 yaş çocuk %50 indirimli, 0-6 yaş çocuk ücretsiz (0 ₺)
-  const effectivePersonUnits =
-    selectedItem
-      ? paxCount + discountedChildCount * 0.5
-      : paxCount;
+  const effectivePersonUnits = selectedItem
+    ? paxCount + discountedChildCount * 0.5
+    : paxCount;
 
   const computedTotalAmount = selectedItem
     ? Math.round(selectedItem.sellPrice * effectivePersonUnits * chargedDaysCount)
@@ -1489,7 +1481,7 @@ export default function TurizmSaaSPanel() {
       paymentStatus,
       commissionEarned: computedCommissionEarned,
       status: "Onaylandı",
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: todayIso,
     };
 
     setBookings([newBooking, ...bookings]);
@@ -1516,7 +1508,6 @@ export default function TurizmSaaSPanel() {
     setLastCreatedBooking(newBooking);
   };
 
-  // Rezervasyon İptal Etme (kontenjan & tarihleri serbest bırakır)
   const handleCancelBooking = (targetBooking: BookingItem) => {
     if (targetBooking.status === "İptal Edildi") return;
 
@@ -1545,7 +1536,6 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // Rezervasyon Tarih & Ödeme Güncelleme
   const openRescheduleModal = (b: BookingItem) => {
     setRescheduleTarget(b);
     setRescheduleStart(b.startDate);
@@ -1559,8 +1549,8 @@ export default function TurizmSaaSPanel() {
     if (!rescheduleTarget || !rescheduleStart) return;
     const finalEnd = rescheduleEnd && rescheduleEnd >= rescheduleStart ? rescheduleEnd : rescheduleStart;
 
-    const startMs = new Date(`${rescheduleStart}T12:00:00`).getTime();
-    const endMs = new Date(`${finalEnd}T12:00:00`).getTime();
+    const startMs = new Date(`${rescheduleStart}T12:00:00Z`).getTime();
+    const endMs = new Date(`${finalEnd}T12:00:00Z`).getTime();
     const diffDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
 
     const unitSell =
@@ -1601,7 +1591,6 @@ export default function TurizmSaaSPanel() {
     setRescheduleTarget(null);
   };
 
-  // CSV Dışa Aktarma
   const handleExportCsv = () => {
     const headers = [
       "PNR",
@@ -1649,7 +1638,7 @@ export default function TurizmSaaSPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mcf-rezervasyonlar-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `mcf-rezervasyonlar-${todayIso}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -2152,7 +2141,9 @@ export default function TurizmSaaSPanel() {
             <p className="text-xs font-semibold text-white">{currentUser.fullName}</p>
             <p className="text-[11px] text-indigo-400">
               {currentPlan}
-              {activeTenantObj ? ` • ${calcRemainingDays(activeTenantObj.expiresAt)} gün` : ""}
+              {activeTenantObj
+                ? ` • ${calcRemainingDays(activeTenantObj.expiresAt, todayIso)} gün`
+                : ""}
             </p>
           </div>
 
@@ -2262,7 +2253,7 @@ export default function TurizmSaaSPanel() {
                     ? `${activeTenantObj.editCount} / ∞`
                     : activeTenantObj.plan === "Basic"
                     ? `${activeTenantObj.editCount} / ${PLAN_SPECS.Basic.maxEdits}`
-                    : `${calcRemainingDays(activeTenantObj.expiresAt)} Gün Kaldı`}
+                    : `${calcRemainingDays(activeTenantObj.expiresAt, todayIso)} Gün Kaldı`}
                 </span>
               </p>
             )}
@@ -2466,7 +2457,7 @@ export default function TurizmSaaSPanel() {
                               PLAN_SPECS[tenant.plan].badgeClass
                             }`}
                           >
-                            {tenant.plan} • {calcRemainingDays(tenant.expiresAt)}g
+                            {tenant.plan} • {calcRemainingDays(tenant.expiresAt, todayIso)}g
                           </span>
                         </div>
                         <p className="text-xs text-emerald-100/80 mt-1">
@@ -2520,7 +2511,6 @@ export default function TurizmSaaSPanel() {
 
           {activeTab === "tenants" && currentUser.role !== "SUB_AGENT" && (
             <div className="space-y-8">
-              {/* Kalıcı Veritabanı (Firebase Realtime Database) Ayar Kutusu */}
               <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -2591,7 +2581,6 @@ export default function TurizmSaaSPanel() {
                 ))}
               </div>
 
-              {/* Acente Bazlı Özel Kurallar & Paket Bitiş Süresi */}
               <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4">
                 <div className="flex items-center gap-2.5">
                   <Clock className="w-5 h-5 text-amber-400 shrink-0" />
@@ -2609,7 +2598,7 @@ export default function TurizmSaaSPanel() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-white truncate">{t.name}</span>
                         <span className="text-emerald-400 font-semibold shrink-0">
-                          {calcRemainingDays(t.expiresAt)} gün kaldı
+                          {calcRemainingDays(t.expiresAt, todayIso)} gün kaldı
                         </span>
                       </div>
 
@@ -2769,7 +2758,7 @@ export default function TurizmSaaSPanel() {
                               </select>
                             </td>
                             <td className="p-3.5 text-xs text-slate-300">
-                              {calcRemainingDays(t.expiresAt)} gün ({t.expiresAt})
+                              {calcRemainingDays(t.expiresAt, todayIso)} gün ({t.expiresAt})
                             </td>
                             <td className="p-3.5 font-semibold text-emerald-400">
                               {PLAN_SPECS[t.plan].monthlyAmount.toLocaleString("tr-TR")} ₺
@@ -2884,7 +2873,6 @@ export default function TurizmSaaSPanel() {
 
           {activeTab === "bookings" && (
             <div className="space-y-5">
-              {/* Dönemsel Ciro, Tahsilat & Komisyon Rapor Kartları + CSV Dışa Aktarım */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4">
                   <p className="text-xs text-slate-400">Aktif Satış Hacmi</p>
@@ -3067,7 +3055,6 @@ export default function TurizmSaaSPanel() {
         </main>
       </div>
 
-      {/* KONTENJAN EKLE / DÜZENLE MODAL */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -3232,7 +3219,6 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* REZERVASYON & PNR MODAL */}
       {selectedItem && (() => {
         const itemRules = getTenantRules(selectedItem.tenantId);
         return (
@@ -3274,7 +3260,6 @@ export default function TurizmSaaSPanel() {
                     </div>
                   </div>
 
-                  {/* BAŞLANGIÇ & BİTİŞ TARİH ARALIĞI SEÇİCİ */}
                   <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
@@ -3376,7 +3361,6 @@ export default function TurizmSaaSPanel() {
                     )}
                   </div>
 
-                  {/* KİŞİ ADEDİ & ÇOCUK KADEMELERİ (0-6 ÜCRETSİZ, 7-12 %50 İNDİRİMLİ) */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">
@@ -3420,7 +3404,6 @@ export default function TurizmSaaSPanel() {
                     </div>
                   </div>
 
-                  {/* DİNAMİK MİSAFİR ADLARI (1. KİŞİ, 2. KİŞİ, 3. KİŞİ...) */}
                   <div className="space-y-2.5 bg-[#080c16] border border-slate-800 rounded-xl p-3">
                     <p className="text-xs font-semibold text-slate-300">
                       Misafir İsimleri ({paxCount} Kişi)
@@ -3449,7 +3432,6 @@ export default function TurizmSaaSPanel() {
                     ))}
                   </div>
 
-                  {/* 0-6 YAŞ ÜCRETSİZ ÇOCUK İSİMLERİ */}
                   {freeChildCount > 0 && (
                     <div className="space-y-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
                       <p className="text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5">
@@ -3476,7 +3458,6 @@ export default function TurizmSaaSPanel() {
                     </div>
                   )}
 
-                  {/* 7-12 YAŞ %50 İNDİRİMLİ ÇOCUK İSİMLERİ */}
                   {discountedChildCount > 0 && (
                     <div className="space-y-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl p-3">
                       <p className="text-xs font-semibold text-sky-300 inline-flex items-center gap-1.5">
@@ -3504,7 +3485,6 @@ export default function TurizmSaaSPanel() {
                     </div>
                   )}
 
-                  {/* ÖDEME DURUMU & KAPORA */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080c16] border border-slate-800 rounded-xl p-3">
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1 inline-flex items-center gap-1">
@@ -3675,7 +3655,6 @@ export default function TurizmSaaSPanel() {
         );
       })()}
 
-      {/* TARİH & ÖDEME GÜNCELLEME MODAL */}
       {rescheduleTarget && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-sm p-5 sm:p-6 shadow-2xl space-y-4">
@@ -3747,7 +3726,6 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* YAZDIRILABİLİR / PDF VOUCHER MODAL */}
       {printVoucherBooking && (() => {
         const vRules = getTenantRules(printVoucherBooking.tenantId);
         const remainingBalance = Math.max(
