@@ -654,7 +654,6 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  // Doğrudan Müşteri Rezervasyon Vitrin State'leri (Giriş yapmadan rezervasyon akışı)
   const [pubItemId, setPubItemId] = useState<string>("HTL-01");
   const [pubStartDate, setPubStartDate] = useState<string>("");
   const [pubEndDate, setPubEndDate] = useState<string>("");
@@ -795,7 +794,6 @@ export default function TurizmSaaSPanel() {
     return () => clearTimeout(timer);
   }, [hydrated, tenants, accounts, inventory, bookings, firebaseDbUrl]);
 
-  // Müşteri vitrini için seçili hizmet ve tarihler
   const selectedPubItem = useMemo(
     () => inventory.find((i) => i.id === pubItemId) || inventory[0] || null,
     [inventory, pubItemId]
@@ -1999,19 +1997,19 @@ export default function TurizmSaaSPanel() {
             </div>
           </div>
 
-          {/* MÜŞTERİ DOĞRUDAN REZERVASYON VİTRİNİ & GERÇEK İLETİŞİM */}
-          <div className="bg-[#0e1422] border border-indigo-500/30 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          {/* MÜŞTERİ DOĞRUDAN REZERVASYON VİTRİNİ & GERÇEK İLETİŞİM (SARI VİTRİN) */}
+          <div className="bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-300 text-slate-950 border-2 border-yellow-200 rounded-3xl p-5 sm:p-6 shadow-2xl shadow-amber-500/20 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 pb-4">
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                <span className="inline-block text-[11px] font-extrabold uppercase tracking-wider bg-slate-950 text-amber-300 px-2.5 py-1 rounded-lg">
                   Müşteri Rezervasyon Ekranı
                 </span>
-                <h2 className="text-lg sm:text-xl font-bold text-white mt-0.5">
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-950 mt-1.5">
                   Hemen Tarih Seç ve Rezervasyon Oluştur
                 </h2>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-300 bg-[#080c16] border border-slate-800 px-3 py-1.5 rounded-xl">
-                <MessageSquare className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 bg-white/85 border border-amber-500/30 px-3 py-1.5 rounded-xl shadow-sm">
+                <MessageSquare className="w-4 h-4 text-emerald-600" />
                 <span>WhatsApp + Panel + Webhook</span>
               </div>
             </div>
@@ -2023,13 +2021,13 @@ export default function TurizmSaaSPanel() {
               >
                 <div className="lg:col-span-6 space-y-4">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">
+                    <label className="block text-xs font-bold text-slate-900 mb-1.5">
                       Otel / Tur / Hizmet Seçin
                     </label>
                     <select
                       value={selectedPubItem.id}
                       onChange={(e) => setPubItemId(e.target.value)}
-                      className="bg-[#080c16] border border-slate-700 focus:border-indigo-400 rounded-xl px-3.5 py-2.5 text-sm text-white w-full focus:outline-none"
+                      className="bg-white/95 border border-amber-600/30 focus:border-slate-950 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-950 w-full focus:outline-none shadow-sm"
                     >
                       {inventory.map((inv) => (
                         <option key={inv.id} value={inv.id} disabled={inv.quota <= 0}>
@@ -2040,12 +2038,12 @@ export default function TurizmSaaSPanel() {
                     </select>
                   </div>
 
-                  <div className="bg-[#080c16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-200 inline-flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4 text-emerald-400" /> Giriş & Çıkış Tarihi
+                  <div className="bg-white/90 border border-amber-600/25 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                      <span className="font-bold text-slate-950 inline-flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-amber-600" /> Giriş & Çıkış Tarihi
                       </span>
-                      <span className="text-[11px] text-amber-300">
+                      <span className="text-[11px] font-semibold text-slate-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
                         {pubRules.checkInRule} • {pubRules.checkOutRule}
                       </span>
                     </div>
@@ -2067,25 +2065,27 @@ export default function TurizmSaaSPanel() {
                             onClick={() => handleSelectPubDay(day.iso)}
                             className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
                               isBlocked
-                                ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
+                                ? "bg-slate-200 border-slate-300 text-slate-400 line-through cursor-not-allowed opacity-60"
                                 : isEdge
-                                ? "bg-emerald-600 border-emerald-300 text-white font-bold cursor-pointer"
+                                ? "bg-slate-950 border-slate-950 text-amber-300 font-bold cursor-pointer shadow-sm"
                                 : isInRange
-                                ? "bg-emerald-500/35 border-emerald-400/70 text-emerald-100 font-semibold cursor-pointer"
-                                : "bg-slate-800/90 hover:bg-emerald-500/20 border-slate-700 text-white cursor-pointer"
+                                ? "bg-amber-400/70 border-amber-600 text-slate-950 font-bold cursor-pointer"
+                                : "bg-amber-50 hover:bg-amber-200 border-amber-300 text-slate-900 font-semibold cursor-pointer"
                             }`}
                           >
                             <span className="text-[9px] opacity-75">{day.weekday}</span>
                             <span className="text-xs">{day.dayNum}</span>
                             {isCheckoutDay && (
-                              <span className="text-[8px] font-bold text-emerald-200">Çıkış</span>
+                              <span className="text-[8px] font-extrabold text-emerald-700">
+                                Çıkış
+                              </span>
                             )}
                           </button>
                         );
                       })}
                     </div>
 
-                    <p className="text-xs text-emerald-400 font-mono">
+                    <p className="text-xs font-bold text-slate-900 font-mono">
                       {pubStartDate === pubEffectiveEnd
                         ? `${pubStartDate} (1 Gün)`
                         : `${pubStartDate} → ${pubEffectiveEnd} • Fiyata Dahil: ${pubChargedDays} Gün`}
@@ -2096,18 +2096,20 @@ export default function TurizmSaaSPanel() {
                 <div className="lg:col-span-6 space-y-3.5">
                   <div className="grid grid-cols-3 gap-2.5">
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">13+ Yetişkin</label>
+                      <label className="block text-[11px] font-bold text-slate-900 mb-1">
+                        13+ Yetişkin
+                      </label>
                       <input
                         type="number"
                         min={1}
                         max={Math.max(1, selectedPubItem.quota)}
                         value={pubPax}
                         onChange={(e) => syncPubPax(Number(e.target.value))}
-                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                        className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-sm font-semibold text-slate-950 w-full shadow-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-emerald-400 mb-1">
+                      <label className="block text-[11px] font-extrabold text-slate-950 mb-1">
                         0-6 Yaş (Ücretsiz)
                       </label>
                       <input
@@ -2116,11 +2118,11 @@ export default function TurizmSaaSPanel() {
                         max={10}
                         value={pubFreeChild}
                         onChange={(e) => setPubFreeChild(Math.max(0, Number(e.target.value)))}
-                        className="bg-[#080c16] border border-emerald-500/35 rounded-xl px-3 py-2 text-sm text-white w-full"
+                        className="bg-white/95 border border-emerald-600/40 rounded-xl px-3 py-2 text-sm font-semibold text-slate-950 w-full shadow-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-sky-400 mb-1">
+                      <label className="block text-[11px] font-extrabold text-slate-950 mb-1">
                         7-12 Yaş (%50 İnd.)
                       </label>
                       <input
@@ -2129,7 +2131,7 @@ export default function TurizmSaaSPanel() {
                         max={10}
                         value={pubDiscChild}
                         onChange={(e) => setPubDiscChild(Math.max(0, Number(e.target.value)))}
-                        className="bg-[#080c16] border border-sky-500/35 rounded-xl px-3 py-2 text-sm text-white w-full"
+                        className="bg-white/95 border border-sky-600/40 rounded-xl px-3 py-2 text-sm font-semibold text-slate-950 w-full shadow-sm"
                       />
                     </div>
                   </div>
@@ -2147,7 +2149,7 @@ export default function TurizmSaaSPanel() {
                           setPubGuestNames(next);
                         }}
                         placeholder={`${i + 1}. Misafir Adı Soyadı`}
-                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                        className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-sm text-slate-950 placeholder:text-slate-500 w-full shadow-sm"
                       />
                     ))}
                   </div>
@@ -2159,14 +2161,14 @@ export default function TurizmSaaSPanel() {
                       value={pubPhone}
                       onChange={(e) => setPubPhone(e.target.value)}
                       placeholder="WhatsApp / Telefon (05XX XXX XX XX)"
-                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-sm text-slate-950 placeholder:text-slate-500 w-full shadow-sm"
                     />
                     <input
                       type="email"
                       value={pubEmail}
                       onChange={(e) => setPubEmail(e.target.value)}
                       placeholder="E-posta (Opsiyonel)"
-                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-sm text-slate-950 placeholder:text-slate-500 w-full shadow-sm"
                     />
                   </div>
 
@@ -2174,7 +2176,7 @@ export default function TurizmSaaSPanel() {
                     <select
                       value={pubPayment}
                       onChange={(e) => setPubPayment(e.target.value as PaymentStatus)}
-                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full"
+                      className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-xs font-semibold text-slate-950 w-full shadow-sm"
                     >
                       <option value="Kapora Alındı">Kapora ile Ön Rezervasyon</option>
                       <option value="Ödendi">Tam Ödeme</option>
@@ -2188,24 +2190,24 @@ export default function TurizmSaaSPanel() {
                         value={pubDeposit}
                         onChange={(e) => setPubDeposit(Number(e.target.value))}
                         placeholder={`Kapora (${pubRules.currency})`}
-                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full"
+                        className="bg-white/95 border border-amber-600/30 rounded-xl px-3 py-2 text-xs font-semibold text-slate-950 placeholder:text-slate-500 w-full shadow-sm"
                       />
                     )}
                   </div>
 
-                  <div className="bg-[#080c16] border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between">
+                  <div className="bg-slate-950 text-white border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between shadow-lg">
                     <div>
-                      <span className="text-xs text-slate-400 block">
+                      <span className="text-xs text-amber-200/80 block">
                         Toplam Tutar ({pubChargedDays} Gün)
                       </span>
-                      <strong className="text-xl font-extrabold text-emerald-400">
+                      <strong className="text-xl font-extrabold text-amber-300">
                         {pubTotalAmount.toLocaleString("tr-TR")} {pubRules.currency}
                       </strong>
                     </div>
                     <button
                       type="submit"
                       disabled={!pubStartDate || selectedPubItem.quota <= 0}
-                      className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-semibold text-xs sm:text-sm px-5 py-3 rounded-xl transition cursor-pointer"
+                      className="bg-amber-400 hover:bg-amber-300 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-extrabold text-xs sm:text-sm px-5 py-3 rounded-xl transition cursor-pointer shadow-md"
                     >
                       Rezervasyon Yap & PNR Al
                     </button>
@@ -2213,13 +2215,13 @@ export default function TurizmSaaSPanel() {
                 </div>
               </form>
             ) : pubCreatedBooking ? (
-              <div className="bg-[#080c16] border border-emerald-500/35 rounded-2xl p-5 space-y-4">
+              <div className="bg-white/95 border border-amber-600/30 rounded-2xl p-5 space-y-4 text-slate-950 shadow-md">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <span className="text-xs text-emerald-400 font-semibold">
+                    <span className="text-xs text-emerald-700 font-bold">
                       Rezervasyonunuz Kaydedildi
                     </span>
-                    <h3 className="text-2xl font-mono font-extrabold text-white mt-0.5">
+                    <h3 className="text-2xl font-mono font-extrabold text-slate-950 mt-0.5">
                       PNR: {pubCreatedBooking.pnr}
                     </h3>
                   </div>
@@ -2230,23 +2232,23 @@ export default function TurizmSaaSPanel() {
                       setPubGuestNames([""]);
                       setPubPhone("");
                     }}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3.5 py-2 rounded-xl cursor-pointer"
+                    className="bg-slate-950 hover:bg-slate-800 text-amber-300 text-xs font-bold px-3.5 py-2 rounded-xl cursor-pointer"
                   >
                     Yeni Rezervasyon
                   </button>
                 </div>
 
-                <p className="text-xs text-slate-300">
+                <p className="text-xs text-slate-800">
                   <strong>{pubCreatedBooking.itemTitle}</strong> •{" "}
                   {pubCreatedBooking.startDate} → {pubCreatedBooking.endDate} (
                   {pubCreatedBooking.chargedDays} Gün) •{" "}
-                  <strong className="text-emerald-400">
+                  <strong className="text-emerald-700">
                     {pubCreatedBooking.totalAmount} {pubRules.currency}
                   </strong>
                 </p>
 
                 {pubWebhookStatus && (
-                  <p className="text-xs text-sky-400">{pubWebhookStatus}</p>
+                  <p className="text-xs font-semibold text-indigo-700">{pubWebhookStatus}</p>
                 )}
 
                 <div className="flex flex-wrap gap-2.5">
@@ -2263,7 +2265,7 @@ export default function TurizmSaaSPanel() {
                       onClick={() =>
                         sendWhatsAppVoucher(pubCreatedBooking, pubRules.contactPhone)
                       }
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                      className="bg-slate-950 hover:bg-slate-800 text-amber-300 text-xs font-semibold px-4 py-2.5 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Phone className="w-4 h-4" /> Acenteye WhatsApp Bildirimi Gönder
                     </button>
