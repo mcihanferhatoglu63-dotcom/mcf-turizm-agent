@@ -475,13 +475,13 @@ export default function TurizmSaaSPanel() {
   ]);
 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [dateStepCompleted, setDateStepCompleted] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paxCount, setPaxCount] = useState(1);
   const [travelDate, setTravelDate] = useState("2026-11-25");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
-  // Yeni Kontenjan / Düzenleme Modalı state'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [newCategory, setNewCategory] = useState("TUR");
@@ -606,6 +606,7 @@ export default function TurizmSaaSPanel() {
     setLoginError("");
     setLimitNotice("");
     setSelectedItem(null);
+    setDateStepCompleted(false);
     setIsAddModalOpen(false);
     setEditingItemId(null);
     setMobileMenuOpen(false);
@@ -922,12 +923,21 @@ export default function TurizmSaaSPanel() {
     setNewSellPrice(1300);
   };
 
+  // Rezervasyon Gir denildiğinde önce tarih kutusu açılır
   const openBookingModal = (item: InventoryItem) => {
     setSelectedItem(item);
+    setDateStepCompleted(false);
+    setTravelDate("2026-11-25");
     setCustomerName("");
     setCustomerPhone("");
     setPaxCount(1);
     setLastCreatedBooking(null);
+  };
+
+  const handleConfirmTravelDate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!travelDate) return;
+    setDateStepCompleted(true);
   };
 
   const handleCreateReservation = (e: React.FormEvent) => {
@@ -2121,7 +2131,6 @@ export default function TurizmSaaSPanel() {
                 />
               </div>
 
-              {/* RESİM EKLEME (DOSYA VEYA URL) */}
               <div className="space-y-2 bg-[#080c16] border border-slate-800 rounded-xl p-3">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
@@ -2200,7 +2209,7 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* REZERVASYON & PNR MODALI */}
+      {/* REZERVASYON & PNR MODALI (ÖNCE TARİH KUTUSU AÇILIR) */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl">
@@ -2210,24 +2219,105 @@ export default function TurizmSaaSPanel() {
                 <h3 className="font-bold text-white">Rezervasyon & PNR</h3>
               </div>
               <button
-                onClick={() => setSelectedItem(null)}
+                onClick={() => {
+                  setSelectedItem(null);
+                  setDateStepCompleted(false);
+                }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {!lastCreatedBooking ? (
-              <form onSubmit={handleCreateReservation} className="space-y-4">
+            {lastCreatedBooking ? (
+              <div className="text-center space-y-4 py-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-2xl font-mono font-bold text-white mt-1">
+                    {lastCreatedBooking.pnr}
+                  </h4>
+                </div>
+
+                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
+                  <p className="text-slate-400">
+                    <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
+                  </p>
+                  <p className="text-slate-400">
+                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span> •{" "}
+                    <span className="text-emerald-400 font-semibold">{lastCreatedBooking.date}</span>
+                  </p>
+                  <p className="text-slate-400">
+                    <span className="text-indigo-400 font-bold">
+                      {lastCreatedBooking.totalAmount} ₺
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <Send className="w-4 h-4" /> WhatsApp Voucher Gönder
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedItem(null);
+                    setDateStepCompleted(false);
+                  }}
+                  className="w-full text-xs text-slate-400 hover:text-white py-2"
+                >
+                  Kapat
+                </button>
+              </div>
+            ) : !dateStepCompleted ? (
+              <form onSubmit={handleConfirmTravelDate} className="space-y-4">
                 <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl">
                   <p className="text-xs text-indigo-400 font-semibold">
                     {selectedItem.tenantName} • {selectedItem.category}
                   </p>
                   <p className="text-sm font-bold text-white mt-0.5">{selectedItem.title}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    <span className="text-white font-semibold">{selectedItem.sellPrice} ₺</span> • Kalan:{" "}
-                    <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
-                  </p>
+                </div>
+
+                <div className="bg-[#080c16] border border-indigo-500/40 rounded-2xl p-4 space-y-2">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
+                    <Calendar className="w-4 h-4 text-indigo-400" /> Rezervasyon Tarihi Seçin
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    autoFocus
+                    value={travelDate}
+                    onChange={(e) => setTravelDate(e.target.value)}
+                    className="bg-[#0e1422] border border-slate-700 focus:border-indigo-400 rounded-xl px-3.5 py-2.5 text-sm text-white w-full focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
+                >
+                  Tarihi Onayla ve Devam Et
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleCreateReservation} className="space-y-4">
+                <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-white">{selectedItem.title}</p>
+                    <p className="text-xs text-emerald-400 font-semibold mt-0.5">
+                      Tarih: {travelDate}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDateStepCompleted(false)}
+                    className="bg-[#0e1422] hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1.5 rounded-lg cursor-pointer shrink-0"
+                  >
+                    Tarihi Değiştir
+                  </button>
                 </div>
 
                 <div>
@@ -2245,31 +2335,20 @@ export default function TurizmSaaSPanel() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Telefon</label>
-                  <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                    <Phone className="w-4 h-4 text-slate-500 shrink-0" />
-                    <input
-                      type="tel"
-                      required
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="05XX XXX XX XX"
-                      className="bg-transparent text-sm text-white w-full focus:outline-none"
-                    />
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Tarih</label>
-                    <input
-                      type="date"
-                      required
-                      value={travelDate}
-                      onChange={(e) => setTravelDate(e.target.value)}
-                      className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
-                    />
+                    <label className="block text-xs text-slate-400 mb-1.5">Telefon</label>
+                    <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
+                      <Phone className="w-4 h-4 text-slate-500 shrink-0" />
+                      <input
+                        type="tel"
+                        required
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="05XX XXX XX XX"
+                        className="bg-transparent text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-slate-400 mb-1.5">Adet</label>
@@ -2307,45 +2386,6 @@ export default function TurizmSaaSPanel() {
                   Onayla & PNR Üret
                 </button>
               </form>
-            ) : (
-              <div className="text-center space-y-4 py-2">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-2xl font-mono font-bold text-white mt-1">
-                    {lastCreatedBooking.pnr}
-                  </h4>
-                </div>
-
-                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
-                  </p>
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
-                  </p>
-                  <p className="text-slate-400">
-                    <span className="text-indigo-400 font-bold">
-                      {lastCreatedBooking.totalAmount} ₺
-                    </span>
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <Send className="w-4 h-4" /> WhatsApp Voucher Gönder
-                </button>
-
-                <button
-                  onClick={() => setSelectedItem(null)}
-                  className="w-full text-xs text-slate-400 hover:text-white py-2"
-                >
-                  Kapat
-                </button>
-              </div>
             )}
           </div>
         </div>
