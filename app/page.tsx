@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Users,
   ShieldCheck,
@@ -33,11 +33,20 @@ import {
   ImagePlus,
   Clock,
   Baby,
+  Database,
+  Printer,
+  Download,
+  Ban,
+  CalendarCog,
+  Wallet,
+  RefreshCw,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
 type PlanType = "Trial" | "Basic" | "Pro";
 type ActiveTab = "dashboard" | "tenants" | "hierarchy" | "bookings";
+type PaymentStatus = "Ödendi" | "Kapora Alındı" | "Acente Cari";
+type BookingStatus = "Onaylandı" | "İptal Edildi";
 
 interface TenantAgency {
   id: string;
@@ -46,6 +55,10 @@ interface TenantAgency {
   revenue: string;
   status: "Aktif" | "Deneme";
   editCount: number;
+  expiresAt: string;
+  checkInTime: string;
+  checkOutTime: string;
+  currency: "₺" | "$" | "€";
 }
 
 interface UserAccount {
@@ -83,6 +96,8 @@ interface BookingItem {
   guestNames: string[];
   freeChildCount: number;
   freeChildNames: string[];
+  discountedChildCount: number;
+  discountedChildNames: string[];
   customerPhone: string;
   itemTitle: string;
   pax: number;
@@ -90,8 +105,11 @@ interface BookingItem {
   endDate: string;
   chargedDays: number;
   totalAmount: number;
+  paidAmount: number;
+  paymentStatus: PaymentStatus;
   commissionEarned: number;
-  status: string;
+  status: BookingStatus;
+  createdAt?: string;
 }
 
 interface PlanSpec {
@@ -114,8 +132,20 @@ interface CalendarDayItem {
   monthShort: string;
 }
 
-const CHECK_IN_RULE = "Giriş: 12:00 sonrası";
-const CHECK_OUT_RULE = "Çıkış / Oda boşaltma: 10:00 öncesi";
+interface PersistedState {
+  tenants: TenantAgency[];
+  accounts: UserAccount[];
+  inventory: InventoryItem[];
+  bookings: BookingItem[];
+  updatedAt?: string;
+}
+
+const STORAGE_KEY = "mcf_turizm_b2b_state_v1";
+const DB_URL_STORAGE_KEY = "mcf_turizm_firebase_db_url";
+const DEFAULT_ENV_DB_URL =
+  typeof process !== "undefined" && process.env?.NEXT_PUBLIC_FIREBASE_DATABASE_URL
+    ? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL.trim()
+    : "";
 
 const PLAN_SPECS: Record<PlanType, PlanSpec> = {
   Trial: {
@@ -220,6 +250,21 @@ function formatIsoDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function addDaysIso(daysFromNow: number): string {
+  const dt = new Date();
+  dt.setHours(12, 0, 0, 0);
+  dt.setDate(dt.getDate() + daysFromNow);
+  return formatIsoDate(dt);
+}
+
+function calcRemainingDays(isoDate: string): number {
+  const target = new Date(`${isoDate}T12:00:00`);
+  const now = new Date();
+  now.setHours(12, 0, 0, 0);
+  const diff = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, diff);
+}
+
 function buildUpcomingDays(count = 28): CalendarDayItem[] {
   const base = new Date();
   base.setHours(12, 0, 0, 0);
@@ -251,6 +296,12 @@ function buildUpcomingDays(count = 28): CalendarDayItem[] {
     });
   }
   return list;
+}
+
+function normalizeFirebaseUrl(rawUrl: string): string {
+  const cleaned = rawUrl.trim().replace(/\/+$/, "");
+  if (!cleaned) return "";
+  return `${cleaned}/turizm-b2b-saas.json`;
 }
 
 function BrandLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
@@ -328,6 +379,13 @@ function ShowcaseImage({
 export default function TurizmSaaSPanel() {
   const [calendarDays, setCalendarDays] = useState<CalendarDayItem[]>(FALLBACK_CALENDAR_DAYS);
 
+  // Kalıcı Veritabanı (Firebase Realtime Database + LocalStorage) durumları
+  const [firebaseDbUrl, setFirebaseDbUrl] = useState<string>(DEFAULT_ENV_DB_URL);
+  const [dbUrlInput, setDbUrlInput] = useState<string>(DEFAULT_ENV_DB_URL);
+  const [dbStatus, setDbStatus] = useState<"local" | "connected" | "syncing" | "error">("local");
+  const [lastSyncedAt, setLastSyncedAt] = useState<string>("");
+  const [hydrated, setHydrated] = useState<boolean>(false);
+
   const [tenants, setTenants] = useState<TenantAgency[]>([
     {
       id: "FIRM-AKDENIZ",
@@ -336,6 +394,10 @@ export default function TurizmSaaSPanel() {
       revenue: "425.000 ₺",
       status: "Aktif",
       editCount: 0,
+      expiresAt: addDaysIso(30),
+      checkInTime: "12:00",
+      checkOutTime: "10:00",
+      currency: "₺",
     },
     {
       id: "FIRM-ERDEMLI",
@@ -344,6 +406,10 @@ export default function TurizmSaaSPanel() {
       revenue: "148.000 ₺",
       status: "Aktif",
       editCount: 2,
+      expiresAt: addDaysIso(24),
+      checkInTime: "12:00",
+      checkOutTime: "10:00",
+      currency: "₺",
     },
     {
       id: "FIRM-DEMO",
@@ -352,6 +418,10 @@ export default function TurizmSaaSPanel() {
       revenue: "12.000 ₺",
       status: "Deneme",
       editCount: 0,
+      expiresAt: addDaysIso(14),
+      checkInTime: "12:00",
+      checkOutTime: "10:00",
+      currency: "₺",
     },
   ]);
 
@@ -516,26 +586,6 @@ export default function TurizmSaaSPanel() {
     },
   ]);
 
-  useEffect(() => {
-    const days = buildUpcomingDays(28);
-    setCalendarDays(days);
-
-    const d4 = days[4]?.iso;
-    const d5 = days[5]?.iso;
-    const d11 = days[11]?.iso;
-    if (d4 && d5 && d11) {
-      setInventory((prev) =>
-        prev.map((item, idx) => {
-          if (idx === 0) return { ...item, bookedDates: [d4, d5, d11] };
-          if (idx === 1) return { ...item, bookedDates: [d5, d11] };
-          if (idx === 2) return { ...item, bookedDates: [d4] };
-          if (idx === 3) return { ...item, bookedDates: [d11] };
-          return item;
-        })
-      );
-    }
-  }, []);
-
   const [bookings, setBookings] = useState<BookingItem[]>([
     {
       pnr: "MCF-4821",
@@ -547,6 +597,8 @@ export default function TurizmSaaSPanel() {
       guestNames: ["Ahmet Yılmaz"],
       freeChildCount: 0,
       freeChildNames: [],
+      discountedChildCount: 0,
+      discountedChildNames: [],
       customerPhone: "905551112233",
       itemTitle: "Kızkalesi Panorama Butik Otel",
       pax: 1,
@@ -554,6 +606,8 @@ export default function TurizmSaaSPanel() {
       endDate: "2026-11-24",
       chargedDays: 2,
       totalAmount: 3000,
+      paidAmount: 3000,
+      paymentStatus: "Ödendi",
       commissionEarned: 600,
       status: "Onaylandı",
     },
@@ -567,6 +621,8 @@ export default function TurizmSaaSPanel() {
       guestNames: ["Caner Özkan"],
       freeChildCount: 1,
       freeChildNames: ["Efe Özkan"],
+      discountedChildCount: 0,
+      discountedChildNames: [],
       customerPhone: "905557778899",
       itemTitle: "Silifke Sahil Aile Pansiyonu",
       pax: 1,
@@ -574,15 +630,182 @@ export default function TurizmSaaSPanel() {
       endDate: "2026-11-27",
       chargedDays: 1,
       totalAmount: 1000,
+      paidAmount: 500,
+      paymentStatus: "Kapora Alındı",
       commissionEarned: 200,
       status: "Onaylandı",
     },
   ]);
 
+  // Takvim + Kalıcı Veri Yükleme (LocalStorage + Firebase RTDB)
+  useEffect(() => {
+    const days = buildUpcomingDays(28);
+    setCalendarDays(days);
+
+    const d4 = days[4]?.iso;
+    const d5 = days[5]?.iso;
+    const d11 = days[11]?.iso;
+
+    let savedDbUrl = DEFAULT_ENV_DB_URL;
+    if (typeof window !== "undefined") {
+      const localUrl = window.localStorage.getItem(DB_URL_STORAGE_KEY);
+      if (localUrl && localUrl.trim()) {
+        savedDbUrl = localUrl.trim();
+      }
+      setFirebaseDbUrl(savedDbUrl);
+      setDbUrlInput(savedDbUrl);
+
+      const rawLocal = window.localStorage.getItem(STORAGE_KEY);
+      if (rawLocal) {
+        try {
+          const parsed = JSON.parse(rawLocal) as PersistedState;
+          if (parsed.tenants?.length) setTenants(parsed.tenants);
+          if (parsed.accounts?.length) setAccounts(parsed.accounts);
+          if (parsed.inventory?.length) setInventory(parsed.inventory);
+          if (parsed.bookings?.length) setBookings(parsed.bookings);
+          if (parsed.updatedAt) setLastSyncedAt(parsed.updatedAt);
+        } catch {
+          // bozuk local veri varsa varsayılanlarla devam et
+        }
+      } else if (d4 && d5 && d11) {
+        setInventory((prev) =>
+          prev.map((item, idx) => {
+            if (idx === 0) return { ...item, bookedDates: [d4, d5, d11] };
+            if (idx === 1) return { ...item, bookedDates: [d5, d11] };
+            if (idx === 2) return { ...item, bookedDates: [d4] };
+            if (idx === 3) return { ...item, bookedDates: [d11] };
+            return item;
+          })
+        );
+      }
+    }
+
+    const endpoint = normalizeFirebaseUrl(savedDbUrl);
+    if (endpoint) {
+      setDbStatus("syncing");
+      fetch(endpoint)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: PersistedState | null) => {
+          if (data && data.tenants?.length && data.accounts?.length && data.inventory?.length) {
+            setTenants(data.tenants);
+            setAccounts(data.accounts);
+            setInventory(data.inventory);
+            if (Array.isArray(data.bookings)) setBookings(data.bookings);
+            if (data.updatedAt) setLastSyncedAt(data.updatedAt);
+          }
+          setDbStatus("connected");
+        })
+        .catch(() => {
+          setDbStatus("error");
+        })
+        .finally(() => {
+          setHydrated(true);
+        });
+    } else {
+      setDbStatus("local");
+      setHydrated(true);
+    }
+  }, []);
+
+  // Değişiklikleri LocalStorage ve Firebase Realtime Database'e kalıcı kaydet
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const nowLabel = new Date().toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const payload: PersistedState = {
+      tenants,
+      accounts,
+      inventory,
+      bookings,
+      updatedAt: nowLabel,
+    };
+
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch {
+        // kota aşımında sessiz geç
+      }
+    }
+
+    const endpoint = normalizeFirebaseUrl(firebaseDbUrl);
+    if (!endpoint) {
+      setDbStatus("local");
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setDbStatus("syncing");
+      fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("DB write error");
+          setDbStatus("connected");
+          setLastSyncedAt(nowLabel);
+        })
+        .catch(() => {
+          setDbStatus("error");
+        });
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [hydrated, tenants, accounts, inventory, bookings, firebaseDbUrl]);
+
+  const handleSaveFirebaseUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = dbUrlInput.trim();
+    setFirebaseDbUrl(cleaned);
+    if (typeof window !== "undefined") {
+      if (cleaned) {
+        window.localStorage.setItem(DB_URL_STORAGE_KEY, cleaned);
+      } else {
+        window.localStorage.removeItem(DB_URL_STORAGE_KEY);
+      }
+    }
+    if (!cleaned) {
+      setDbStatus("local");
+      return;
+    }
+    const endpoint = normalizeFirebaseUrl(cleaned);
+    setDbStatus("syncing");
+    fetch(endpoint)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: PersistedState | null) => {
+        if (data && data.tenants?.length && data.accounts?.length && data.inventory?.length) {
+          setTenants(data.tenants);
+          setAccounts(data.accounts);
+          setInventory(data.inventory);
+          if (Array.isArray(data.bookings)) setBookings(data.bookings);
+        }
+        setDbStatus("connected");
+        setLastSyncedAt(
+          new Date().toLocaleTimeString("tr-TR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })
+        );
+      })
+      .catch(() => setDbStatus("error"));
+  };
+
+  // Rezervasyon modal state'leri
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [guestNames, setGuestNames] = useState<string[]>([""]);
   const [freeChildCount, setFreeChildCount] = useState<number>(0);
   const [freeChildNames, setFreeChildNames] = useState<string[]>([]);
+  const [discountedChildCount, setDiscountedChildCount] = useState<number>(0);
+  const [discountedChildNames, setDiscountedChildNames] = useState<string[]>([]);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("Ödendi");
+  const [depositAmount, setDepositAmount] = useState<number>(0);
   const [customerPhone, setCustomerPhone] = useState("");
   const [paxCount, setPaxCount] = useState(1);
   const [startDate, setStartDate] = useState<string>("");
@@ -590,6 +813,15 @@ export default function TurizmSaaSPanel() {
   const [rangeWarning, setRangeWarning] = useState<string>("");
   const [lastCreatedBooking, setLastCreatedBooking] = useState<BookingItem | null>(null);
 
+  // Tarih düzenleme & Yazdırılabilir Voucher modal state'leri
+  const [rescheduleTarget, setRescheduleTarget] = useState<BookingItem | null>(null);
+  const [rescheduleStart, setRescheduleStart] = useState("");
+  const [rescheduleEnd, setRescheduleEnd] = useState("");
+  const [reschedulePayment, setReschedulePayment] = useState<PaymentStatus>("Ödendi");
+  const [reschedulePaid, setReschedulePaid] = useState<number>(0);
+  const [printVoucherBooking, setPrintVoucherBooking] = useState<BookingItem | null>(null);
+
+  // Kontenjan ekleme/düzenleme modal state'leri
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [newCategory, setNewCategory] = useState("TUR");
@@ -617,6 +849,21 @@ export default function TurizmSaaSPanel() {
     : "Trial";
 
   const activeTenantObj = currentUser ? getTenantObj(currentUser.tenantId) : null;
+
+  const getTenantRules = (tenantId: string | null) => {
+    const t = getTenantObj(tenantId);
+    const inTime = t?.checkInTime || "12:00";
+    const outTime = t?.checkOutTime || "10:00";
+    const currency = t?.currency || "₺";
+    return {
+      currency,
+      checkInRule: `Giriş: ${inTime} sonrası`,
+      checkOutRule: `Çıkış / Oda boşaltma: ${outTime} öncesi`,
+      shortRule: `Giriş >${inTime} • Çıkış <${outTime}`,
+    };
+  };
+
+  const activeRules = getTenantRules(currentUser?.tenantId || null);
 
   const handleCopyIban = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -716,11 +963,14 @@ export default function TurizmSaaSPanel() {
     setSelectedItem(null);
     setIsAddModalOpen(false);
     setEditingItemId(null);
+    setRescheduleTarget(null);
+    setPrintVoucherBooking(null);
     setMobileMenuOpen(false);
   };
 
   const handleChangeTenantPlan = (tenantId: string, nextPlan: PlanType) => {
     if (!currentUser || currentUser.role !== "SUPER_ADMIN") return;
+    const daysByPlan = nextPlan === "Trial" ? 14 : 30;
     setTenants((prev) =>
       prev.map((t) =>
         t.id === tenantId
@@ -729,11 +979,21 @@ export default function TurizmSaaSPanel() {
               plan: nextPlan,
               status: nextPlan === "Trial" ? "Deneme" : "Aktif",
               editCount: 0,
+              expiresAt: addDaysIso(daysByPlan),
             }
           : t
       )
     );
     setLimitNotice("");
+  };
+
+  const handleUpdateTenantRules = (
+    tenantId: string,
+    patch: Partial<Pick<TenantAgency, "checkInTime" | "checkOutTime" | "currency" | "expiresAt">>
+  ) => {
+    if (!currentUser || currentUser.role === "SUB_AGENT") return;
+    if (currentUser.role === "TENANT_ADMIN" && currentUser.tenantId !== tenantId) return;
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, ...patch } : t)));
   };
 
   const handleAddTenantAgency = (e: React.FormEvent) => {
@@ -757,6 +1017,10 @@ export default function TurizmSaaSPanel() {
       revenue: "0 ₺",
       status: newAgencyPlan === "Trial" ? "Deneme" : "Aktif",
       editCount: 0,
+      expiresAt: addDaysIso(newAgencyPlan === "Trial" ? 14 : 30),
+      checkInTime: "12:00",
+      checkOutTime: "10:00",
+      currency: "₺",
     };
 
     const createdOwner: UserAccount = {
@@ -864,8 +1128,24 @@ export default function TurizmSaaSPanel() {
     (sum, t) => sum + PLAN_SPECS[t.plan].monthlyAmount,
     0
   );
-  const totalAgentCommission = visibleBookings.reduce(
+
+  const activeBookingsOnly = useMemo(
+    () => visibleBookings.filter((b) => b.status !== "İptal Edildi"),
+    [visibleBookings]
+  );
+
+  const totalAgentCommission = activeBookingsOnly.reduce(
     (acc, b) => acc + b.commissionEarned,
+    0
+  );
+
+  const totalSalesVolume = activeBookingsOnly.reduce(
+    (acc, b) => acc + b.totalAmount,
+    0
+  );
+
+  const totalCollectedAmount = activeBookingsOnly.reduce(
+    (acc, b) => acc + b.paidAmount,
     0
   );
 
@@ -1055,6 +1335,18 @@ export default function TurizmSaaSPanel() {
     });
   };
 
+  const syncDiscountedChildCount = (nextChildCount: number) => {
+    const safeCount = Math.max(0, Math.min(10, nextChildCount));
+    setDiscountedChildCount(safeCount);
+    setDiscountedChildNames((prev) => {
+      if (safeCount === prev.length) return prev;
+      if (safeCount > prev.length) {
+        return [...prev, ...Array.from({ length: safeCount - prev.length }, () => "")];
+      }
+      return prev.slice(0, safeCount);
+    });
+  };
+
   const openBookingModal = (item: InventoryItem) => {
     const blocked = new Set(item.bookedDates || []);
     const firstAvailable = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
@@ -1066,6 +1358,10 @@ export default function TurizmSaaSPanel() {
     setGuestNames([""]);
     setFreeChildCount(0);
     setFreeChildNames([]);
+    setDiscountedChildCount(0);
+    setDiscountedChildNames([]);
+    setPaymentStatus("Ödendi");
+    setDepositAmount(item.sellPrice);
     setCustomerPhone("");
     setLastCreatedBooking(null);
   };
@@ -1122,6 +1418,20 @@ export default function TurizmSaaSPanel() {
     hasCheckoutDay ? selectedRangeIsos.length - 1 : selectedRangeIsos.length
   );
 
+  // 13+ yetişkin tam fiyat, 7-12 yaş çocuk %50 indirimli, 0-6 yaş çocuk ücretsiz (0 ₺)
+  const effectivePersonUnits =
+    selectedItem
+      ? paxCount + discountedChildCount * 0.5
+      : paxCount;
+
+  const computedTotalAmount = selectedItem
+    ? Math.round(selectedItem.sellPrice * effectivePersonUnits * chargedDaysCount)
+    : 0;
+
+  const computedCommissionEarned = selectedItem
+    ? Math.round(selectedItem.commission * effectivePersonUnits * chargedDaysCount)
+    : 0;
+
   const handleCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !selectedItem || !startDate || !customerPhone.trim()) {
@@ -1135,8 +1445,11 @@ export default function TurizmSaaSPanel() {
       return;
     }
 
-    const normalizedChildren = Array.from({ length: freeChildCount }, (_, i) =>
+    const normalizedFreeChildren = Array.from({ length: freeChildCount }, (_, i) =>
       (freeChildNames[i] || "").trim()
+    );
+    const normalizedDiscountedChildren = Array.from({ length: discountedChildCount }, (_, i) =>
+      (discountedChildNames[i] || "").trim()
     );
 
     const finalEndDate = effectiveEndDate || startDate;
@@ -1146,7 +1459,13 @@ export default function TurizmSaaSPanel() {
       ? cleanPhone
       : `90${cleanPhone.replace(/^0/, "")}`;
 
-    // 0-6 yaş çocuk ücretsiz olduğu için tutar ve komisyon yalnızca ücretli kişi adedi * ücretli gün üzerinden hesaplanır
+    const resolvedPaidAmount =
+      paymentStatus === "Ödendi"
+        ? computedTotalAmount
+        : paymentStatus === "Kapora Alındı"
+        ? Math.min(computedTotalAmount, Math.max(0, depositAmount))
+        : 0;
+
     const newBooking: BookingItem = {
       pnr: randomPnr,
       tenantId: selectedItem.tenantId,
@@ -1156,16 +1475,21 @@ export default function TurizmSaaSPanel() {
       customerName: normalizedGuests[0],
       guestNames: normalizedGuests,
       freeChildCount,
-      freeChildNames: normalizedChildren,
+      freeChildNames: normalizedFreeChildren,
+      discountedChildCount,
+      discountedChildNames: normalizedDiscountedChildren,
       customerPhone: formattedPhone,
       itemTitle: selectedItem.title,
       pax: paxCount,
       startDate,
       endDate: finalEndDate,
       chargedDays: chargedDaysCount,
-      totalAmount: selectedItem.sellPrice * paxCount * chargedDaysCount,
-      commissionEarned: selectedItem.commission * paxCount * chargedDaysCount,
+      totalAmount: computedTotalAmount,
+      paidAmount: resolvedPaidAmount,
+      paymentStatus,
+      commissionEarned: computedCommissionEarned,
       status: "Onaylandı",
+      createdAt: new Date().toISOString().slice(0, 10),
     };
 
     setBookings([newBooking, ...bookings]);
@@ -1192,7 +1516,146 @@ export default function TurizmSaaSPanel() {
     setLastCreatedBooking(newBooking);
   };
 
+  // Rezervasyon İptal Etme (kontenjan & tarihleri serbest bırakır)
+  const handleCancelBooking = (targetBooking: BookingItem) => {
+    if (targetBooking.status === "İptal Edildi") return;
+
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.pnr === targetBooking.pnr
+          ? { ...b, status: "İptal Edildi", paidAmount: 0 }
+          : b
+      )
+    );
+
+    setInventory((prev) =>
+      prev.map((inv) => {
+        if (inv.title !== targetBooking.itemTitle || inv.tenantId !== targetBooking.tenantId) {
+          return inv;
+        }
+        const remainingBlocked = (inv.bookedDates || []).filter(
+          (d) => d < targetBooking.startDate || d > targetBooking.endDate
+        );
+        return {
+          ...inv,
+          quota: inv.quota + targetBooking.pax,
+          bookedDates: remainingBlocked,
+        };
+      })
+    );
+  };
+
+  // Rezervasyon Tarih & Ödeme Güncelleme
+  const openRescheduleModal = (b: BookingItem) => {
+    setRescheduleTarget(b);
+    setRescheduleStart(b.startDate);
+    setRescheduleEnd(b.endDate);
+    setReschedulePayment(b.paymentStatus);
+    setReschedulePaid(b.paidAmount);
+  };
+
+  const handleSaveReschedule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rescheduleTarget || !rescheduleStart) return;
+    const finalEnd = rescheduleEnd && rescheduleEnd >= rescheduleStart ? rescheduleEnd : rescheduleStart;
+
+    const startMs = new Date(`${rescheduleStart}T12:00:00`).getTime();
+    const endMs = new Date(`${finalEnd}T12:00:00`).getTime();
+    const diffDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
+
+    const unitSell =
+      rescheduleTarget.chargedDays > 0
+        ? rescheduleTarget.totalAmount / rescheduleTarget.chargedDays
+        : rescheduleTarget.totalAmount;
+    const unitComm =
+      rescheduleTarget.chargedDays > 0
+        ? rescheduleTarget.commissionEarned / rescheduleTarget.chargedDays
+        : rescheduleTarget.commissionEarned;
+
+    const updatedTotal = Math.round(unitSell * diffDays);
+    const updatedComm = Math.round(unitComm * diffDays);
+    const updatedPaid =
+      reschedulePayment === "Ödendi"
+        ? updatedTotal
+        : reschedulePayment === "Acente Cari"
+        ? 0
+        : Math.min(updatedTotal, Math.max(0, reschedulePaid));
+
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.pnr === rescheduleTarget.pnr
+          ? {
+              ...b,
+              startDate: rescheduleStart,
+              endDate: finalEnd,
+              chargedDays: diffDays,
+              totalAmount: updatedTotal,
+              commissionEarned: updatedComm,
+              paymentStatus: reschedulePayment,
+              paidAmount: updatedPaid,
+            }
+          : b
+      )
+    );
+
+    setRescheduleTarget(null);
+  };
+
+  // CSV Dışa Aktarma
+  const handleExportCsv = () => {
+    const headers = [
+      "PNR",
+      "Acente",
+      "Danisman",
+      "Misafirler",
+      "0-6 Yas Ucretsiz",
+      "7-12 Yas Indirimli",
+      "Hizmet",
+      "Baslangic",
+      "Bitis",
+      "Gun",
+      "Tutar",
+      "Odenen",
+      "Odeme Durumu",
+      "Komisyon",
+      "Durum",
+    ];
+
+    const rows = visibleBookings.map((b) => [
+      b.pnr,
+      b.tenantName,
+      b.agentName,
+      (b.guestNames?.length ? b.guestNames : [b.customerName]).join(" / "),
+      String(b.freeChildCount),
+      String(b.discountedChildCount),
+      b.itemTitle,
+      b.startDate,
+      b.endDate,
+      String(b.chargedDays),
+      String(b.totalAmount),
+      String(b.paidAmount),
+      b.paymentStatus,
+      String(b.commissionEarned),
+      b.status,
+    ]);
+
+    const csvContent =
+      "\uFEFF" +
+      [headers, ...rows]
+        .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+        .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mcf-rezervasyonlar-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const sendWhatsAppVoucher = (b: BookingItem) => {
+    const rules = getTenantRules(b.tenantId);
     const dateLabel =
       b.startDate === b.endDate
         ? `${b.startDate} (${b.chargedDays} Gün)`
@@ -1203,7 +1666,7 @@ export default function TurizmSaaSPanel() {
         ? b.guestNames.map((g, idx) => `${idx + 1}. Kişi: ${g}`).join(", ")
         : b.customerName;
 
-    const childSummary =
+    const freeChildSummary =
       b.freeChildCount > 0
         ? `\n*0-6 Yaş Çocuk (Ücretsiz):* ${b.freeChildCount} Çocuk${
             b.freeChildNames.filter(Boolean).length > 0
@@ -1212,16 +1675,26 @@ export default function TurizmSaaSPanel() {
           }`
         : "";
 
+    const discChildSummary =
+      b.discountedChildCount > 0
+        ? `\n*7-12 Yaş Çocuk (%50 İndirimli):* ${b.discountedChildCount} Çocuk${
+            b.discountedChildNames.filter(Boolean).length > 0
+              ? ` (${b.discountedChildNames.filter(Boolean).join(", ")})`
+              : ""
+          }`
+        : "";
+
+    const balance = Math.max(0, b.totalAmount - b.paidAmount);
+
     const voucherText =
       `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
       `----------------------------------\n` +
-      `*PNR Kodu:* ${b.pnr}\n` +
-      `*Kişi Adedi:* ${b.pax} Kişi (${guestsSummary})${childSummary}\n` +
+      `*PNR Kodu:* ${b.pnr} (${b.status})\n` +
+      `*Kişi Adedi:* ${b.pax} Kişi (${guestsSummary})${freeChildSummary}${discChildSummary}\n` +
       `*Hizmet:* ${b.itemTitle}\n` +
       `*Tarih Aralığı:* ${dateLabel}\n` +
-      `*Saat Kuralı:* ${CHECK_IN_RULE} | ${CHECK_OUT_RULE}\n` +
-      `*Toplam Tutar:* ${b.totalAmount} ₺\n` +
-      `*Durum:* ${b.status}\n` +
+      `*Saat Kuralı:* ${rules.checkInRule} | ${rules.checkOutRule}\n` +
+      `*Toplam Tutar:* ${b.totalAmount} ${rules.currency} | *Ödeme:* ${b.paymentStatus} (Kalan: ${balance} ${rules.currency})\n` +
       `----------------------------------\n` +
       `MCF Technology & Software Solutions`;
 
@@ -1268,7 +1741,7 @@ export default function TurizmSaaSPanel() {
                   MCF B2B TURİZM PORTALI
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-400">
-                  Kontenjan, rezervasyon, PNR ve dijital voucher altyapısı
+                  Kontenjan, rezervasyon, PNR, raporlama ve dijital voucher altyapısı
                 </p>
               </div>
             </div>
@@ -1615,6 +2088,23 @@ export default function TurizmSaaSPanel() {
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #printable-voucher-area, #printable-voucher-area * { visibility: visible; }
+          #printable-voucher-area {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            padding: 24px !important;
+          }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
       <header className="border-b border-slate-800/80 bg-[#0b101d] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 sticky top-0 z-30">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -1631,14 +2121,39 @@ export default function TurizmSaaSPanel() {
             <h1 className="text-sm sm:text-base font-bold tracking-wide text-white truncate">
               MCF B2B TURİZM
             </h1>
-            <p className="text-[11px] text-slate-400 truncate">{currentUser.tenantName}</p>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
+              <span className="truncate">{currentUser.tenantName}</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800/90 text-[10px] font-mono">
+                <Database
+                  className={`w-3 h-3 ${
+                    dbStatus === "connected"
+                      ? "text-emerald-400"
+                      : dbStatus === "syncing"
+                      ? "text-amber-400"
+                      : dbStatus === "error"
+                      ? "text-rose-400"
+                      : "text-sky-400"
+                  }`}
+                />
+                {dbStatus === "connected"
+                  ? `Firebase${lastSyncedAt ? ` • ${lastSyncedAt}` : ""}`
+                  : dbStatus === "syncing"
+                  ? "Kaydediliyor..."
+                  : dbStatus === "error"
+                  ? "Yerel Yedek"
+                  : "Kalıcı Yerel DB"}
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <div className="hidden sm:block text-right">
             <p className="text-xs font-semibold text-white">{currentUser.fullName}</p>
-            <p className="text-[11px] text-indigo-400">{currentPlan}</p>
+            <p className="text-[11px] text-indigo-400">
+              {currentPlan}
+              {activeTenantObj ? ` • ${calcRemainingDays(activeTenantObj.expiresAt)} gün` : ""}
+            </p>
           </div>
 
           <button
@@ -1689,7 +2204,7 @@ export default function TurizmSaaSPanel() {
                   : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
               }`}
             >
-              <Users className="w-4 h-4 shrink-0" /> PNR & Voucher
+              <Users className="w-4 h-4 shrink-0" /> PNR & Rapor
             </button>
 
             <button
@@ -1736,7 +2251,8 @@ export default function TurizmSaaSPanel() {
               </span>
             </div>
             <p className="text-lg font-bold text-emerald-400 mt-0.5">
-              +{isSuperAdmin ? totalSubscriptionIncome.toLocaleString("tr-TR") : totalAgentCommission} ₺
+              +{isSuperAdmin ? totalSubscriptionIncome.toLocaleString("tr-TR") : totalAgentCommission}{" "}
+              {activeRules.currency}
             </p>
             {isTenantAdmin && activeTenantObj && (
               <p className="text-[10px] text-slate-400 mt-1">
@@ -1746,7 +2262,7 @@ export default function TurizmSaaSPanel() {
                     ? `${activeTenantObj.editCount} / ∞`
                     : activeTenantObj.plan === "Basic"
                     ? `${activeTenantObj.editCount} / ${PLAN_SPECS.Basic.maxEdits}`
-                    : "14 Gün"}
+                    : `${calcRemainingDays(activeTenantObj.expiresAt)} Gün Kaldı`}
                 </span>
               </p>
             )}
@@ -1786,7 +2302,8 @@ export default function TurizmSaaSPanel() {
                     Kontenjan & Satış Havuzu
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                    {PLAN_SPECS[currentPlan].summary} • {CHECK_IN_RULE} • {CHECK_OUT_RULE} • 0-6 Yaş Ücretsiz
+                    {PLAN_SPECS[currentPlan].summary} • {activeRules.checkInRule} •{" "}
+                    {activeRules.checkOutRule} • 0-6 Yaş Ücretsiz • 7-12 Yaş %50 İndirimli
                   </p>
                 </div>
 
@@ -1801,90 +2318,99 @@ export default function TurizmSaaSPanel() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                {visibleInventory.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-[#0e1422] border border-slate-800/90 hover:border-indigo-500/40 rounded-2xl overflow-hidden flex flex-col justify-between transition"
-                  >
-                    <div>
-                      <div className="h-32 w-full relative bg-[#080c16]">
-                        <ShowcaseImage
-                          src={item.imageSrc}
-                          alt={item.title}
-                          fallbackGradient="from-indigo-950 via-slate-900 to-emerald-950"
-                          className="w-full h-full"
-                        />
-                        <div className="absolute top-2.5 left-2.5">
-                          <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-black/70 text-indigo-300 border border-white/15 backdrop-blur-sm">
-                            {item.category}
-                          </span>
-                        </div>
-                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
-                          {currentUser.role !== "SUB_AGENT" && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditInventoryModal(item)}
-                              title="Düzenle"
-                              className="bg-black/75 hover:bg-indigo-600 text-white p-1.5 rounded-md border border-white/15 backdrop-blur-sm transition cursor-pointer"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <span
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-sm ${
-                              item.quota > 0 ? "text-emerald-300" : "text-rose-300"
-                            }`}
-                          >
-                            {item.quota > 0 ? `Kalan: ${item.quota}` : "Doldu"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 sm:p-5">
-                        <p className="text-[11px] text-slate-500 mb-1 truncate">{item.tenantName}</p>
-                        <h3 className="text-base font-bold text-white mb-3.5">{item.title}</h3>
-
-                        <div className="bg-[#080c16] border border-slate-800/80 rounded-xl p-3 space-y-2 text-xs">
-                          {currentUser.role !== "SUB_AGENT" && (
-                            <div className="flex justify-between gap-2">
-                              <span className="text-slate-400">Net:</span>
-                              <span className="font-semibold text-white">{item.netPrice} ₺</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-400">Satış (Günlük):</span>
-                            <span className="font-bold text-indigo-400">{item.sellPrice} ₺</span>
+                {visibleInventory.map((item) => {
+                  const itemRules = getTenantRules(item.tenantId);
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-[#0e1422] border border-slate-800/90 hover:border-indigo-500/40 rounded-2xl overflow-hidden flex flex-col justify-between transition"
+                    >
+                      <div>
+                        <div className="h-32 w-full relative bg-[#080c16]">
+                          <ShowcaseImage
+                            src={item.imageSrc}
+                            alt={item.title}
+                            fallbackGradient="from-indigo-950 via-slate-900 to-emerald-950"
+                            className="w-full h-full"
+                          />
+                          <div className="absolute top-2.5 left-2.5">
+                            <span className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md bg-black/70 text-indigo-300 border border-white/15 backdrop-blur-sm">
+                              {item.category}
+                            </span>
                           </div>
-                          {!isSuperAdmin && (
-                            <div className="border-t border-slate-800 pt-2 flex justify-between gap-2">
-                              <span className="text-slate-400">Komisyon:</span>
-                              <span className="font-bold text-emerald-400">+{item.commission} ₺</span>
+                          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                            {currentUser.role !== "SUB_AGENT" && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditInventoryModal(item)}
+                                title="Düzenle"
+                                className="bg-black/75 hover:bg-indigo-600 text-white p-1.5 rounded-md border border-white/15 backdrop-blur-sm transition cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <span
+                              className={`text-[11px] font-semibold px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-sm ${
+                                item.quota > 0 ? "text-emerald-300" : "text-rose-300"
+                              }`}
+                            >
+                              {item.quota > 0 ? `Kalan: ${item.quota}` : "Doldu"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 sm:p-5">
+                          <p className="text-[11px] text-slate-500 mb-1 truncate">{item.tenantName}</p>
+                          <h3 className="text-base font-bold text-white mb-3.5">{item.title}</h3>
+
+                          <div className="bg-[#080c16] border border-slate-800/80 rounded-xl p-3 space-y-2 text-xs">
+                            {currentUser.role !== "SUB_AGENT" && (
+                              <div className="flex justify-between gap-2">
+                                <span className="text-slate-400">Net:</span>
+                                <span className="font-semibold text-white">
+                                  {item.netPrice} {itemRules.currency}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between gap-2">
+                              <span className="text-slate-400">Satış (Günlük):</span>
+                              <span className="font-bold text-indigo-400">
+                                {item.sellPrice} {itemRules.currency}
+                              </span>
                             </div>
-                          )}
+                            {!isSuperAdmin && (
+                              <div className="border-t border-slate-800 pt-2 flex justify-between gap-2">
+                                <span className="text-slate-400">Komisyon:</span>
+                                <span className="font-bold text-emerald-400">
+                                  +{item.commission} {itemRules.currency}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
-                      {currentUser.role !== "SUB_AGENT" && (
+                      <div className="px-4 sm:px-5 pb-4 sm:pb-5 flex gap-2">
+                        {currentUser.role !== "SUB_AGENT" && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditInventoryModal(item)}
+                            className="bg-[#080c16] hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium text-xs px-3 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Düzenle
+                          </button>
+                        )}
                         <button
-                          type="button"
-                          onClick={() => handleOpenEditInventoryModal(item)}
-                          className="bg-[#080c16] hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium text-xs px-3 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0"
+                          disabled={item.quota === 0}
+                          onClick={() => openBookingModal(item)}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
                         >
-                          <Pencil className="w-3.5 h-3.5" /> Düzenle
+                          <Plus className="w-4 h-4" /> Rezervasyon Gir
                         </button>
-                      )}
-                      <button
-                        disabled={item.quota === 0}
-                        onClick={() => openBookingModal(item)}
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" /> Rezervasyon Gir
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1940,11 +2466,12 @@ export default function TurizmSaaSPanel() {
                               PLAN_SPECS[tenant.plan].badgeClass
                             }`}
                           >
-                            {tenant.plan}
+                            {tenant.plan} • {calcRemainingDays(tenant.expiresAt)}g
                           </span>
                         </div>
                         <p className="text-xs text-emerald-100/80 mt-1">
-                          {owner?.fullName || ""} • {invCount}
+                          {owner?.fullName || ""} • {invCount} Kontenjan • Giriş &gt;{tenant.checkInTime}{" "}
+                          / Çıkış &lt;{tenant.checkOutTime}
                         </p>
                       </div>
 
@@ -1993,6 +2520,56 @@ export default function TurizmSaaSPanel() {
 
           {activeTab === "tenants" && currentUser.role !== "SUB_AGENT" && (
             <div className="space-y-8">
+              {/* Kalıcı Veritabanı (Firebase Realtime Database) Ayar Kutusu */}
+              <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-sm font-bold text-white">
+                      Kalıcı Veri Tabanı Bağlantısı (Firebase Realtime DB + Yerel Yedek)
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Durum:{" "}
+                    <strong
+                      className={
+                        dbStatus === "connected"
+                          ? "text-emerald-400"
+                          : dbStatus === "syncing"
+                          ? "text-amber-400"
+                          : dbStatus === "error"
+                          ? "text-rose-400"
+                          : "text-sky-400"
+                      }
+                    >
+                      {dbStatus === "connected"
+                        ? "Bağlı & Senkron"
+                        : dbStatus === "syncing"
+                        ? "Senkronize Ediliyor"
+                        : dbStatus === "error"
+                        ? "Bağlantı Hatası (Yerel Aktif)"
+                        : "Yerel Kalıcı Hafıza Aktif"}
+                    </strong>
+                  </span>
+                </div>
+
+                <form onSubmit={handleSaveFirebaseUrl} className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="text"
+                    value={dbUrlInput}
+                    onChange={(e) => setDbUrlInput(e.target.value)}
+                    placeholder="https://proje-adi-default-rtdb.firebaseio.com (Boş bırakılırsa yerel kalıcı DB çalışır)"
+                    className="flex-1 bg-[#080c16] border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none font-mono"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl inline-flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Bağla & Senkronize Et
+                  </button>
+                </form>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {(["Trial", "Basic", "Pro"] as PlanType[]).map((planKey) => (
                   <div
@@ -2012,6 +2589,95 @@ export default function TurizmSaaSPanel() {
                     <p className="text-xs text-slate-400">{PLAN_SPECS[planKey].summary}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* Acente Bazlı Özel Kurallar & Paket Bitiş Süresi */}
+              <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+                  <h2 className="text-base sm:text-lg font-bold text-white">
+                    Acente Saat, Para Birimi & Paket Süresi Kuralları
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {hierarchyTenants.map((t) => (
+                    <div
+                      key={t.id}
+                      className="bg-[#080c16] border border-slate-800 rounded-2xl p-4 space-y-3 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-white truncate">{t.name}</span>
+                        <span className="text-emerald-400 font-semibold shrink-0">
+                          {calcRemainingDays(t.expiresAt)} gün kaldı
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">
+                            Giriş Saati
+                          </label>
+                          <input
+                            type="time"
+                            value={t.checkInTime}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, { checkInTime: e.target.value })
+                            }
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">
+                            Çıkış Saati
+                          </label>
+                          <input
+                            type="time"
+                            value={t.checkOutTime}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, { checkOutTime: e.target.value })
+                            }
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">
+                            Para Birimi
+                          </label>
+                          <select
+                            value={t.currency}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, {
+                                currency: e.target.value as "₺" | "$" | "€",
+                              })
+                            }
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full"
+                          >
+                            <option value="₺">TRY (₺)</option>
+                            <option value="$">USD ($)</option>
+                            <option value="€">EUR (€)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">
+                            Paket Bitiş
+                          </label>
+                          <input
+                            type="date"
+                            value={t.expiresAt}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, { expiresAt: e.target.value })
+                            }
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {isSuperAdmin && (
@@ -2071,11 +2737,12 @@ export default function TurizmSaaSPanel() {
                   </form>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm min-w-[580px]">
+                    <table className="w-full text-left text-sm min-w-[640px]">
                       <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                         <tr>
                           <th className="p-3.5">Acente</th>
                           <th className="p-3.5">Paket</th>
+                          <th className="p-3.5">Kalan Süre</th>
                           <th className="p-3.5">Paket Ücreti</th>
                           <th className="p-3.5">Durum</th>
                           <th className="p-3.5 text-right">İşlem</th>
@@ -2100,6 +2767,9 @@ export default function TurizmSaaSPanel() {
                                 <option value="Basic">Basic (3.000 TL / Ay)</option>
                                 <option value="Pro">Pro (5.000 TL / Ay)</option>
                               </select>
+                            </td>
+                            <td className="p-3.5 text-xs text-slate-300">
+                              {calcRemainingDays(t.expiresAt)} gün ({t.expiresAt})
                             </td>
                             <td className="p-3.5 font-semibold text-emerald-400">
                               {PLAN_SPECS[t.plan].monthlyAmount.toLocaleString("tr-TR")} ₺
@@ -2213,83 +2883,191 @@ export default function TurizmSaaSPanel() {
           )}
 
           {activeTab === "bookings" && (
-            <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-white">PNR & Voucher</h2>
-                <span className="text-[11px] text-slate-400">
-                  {CHECK_IN_RULE} • {CHECK_OUT_RULE} • 0-6 Yaş Ücretsiz
-                </span>
+            <div className="space-y-5">
+              {/* Dönemsel Ciro, Tahsilat & Komisyon Rapor Kartları + CSV Dışa Aktarım */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400">Aktif Satış Hacmi</p>
+                  <p className="text-xl font-bold text-white mt-1">
+                    {totalSalesVolume.toLocaleString("tr-TR")} {activeRules.currency}
+                  </p>
+                </div>
+                <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400">Tahsil Edilen / Kapora</p>
+                  <p className="text-xl font-bold text-sky-400 mt-1">
+                    {totalCollectedAmount.toLocaleString("tr-TR")} {activeRules.currency}
+                  </p>
+                </div>
+                <div className="bg-[#0e1422] border border-slate-800 rounded-2xl p-4">
+                  <p className="text-xs text-slate-400">
+                    {isSuperAdmin ? "Toplam Paket Geliri" : "Toplam Komisyon"}
+                  </p>
+                  <p className="text-xl font-bold text-emerald-400 mt-1">
+                    +
+                    {(isSuperAdmin
+                      ? totalSubscriptionIncome
+                      : totalAgentCommission
+                    ).toLocaleString("tr-TR")}{" "}
+                    {activeRules.currency}
+                  </p>
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[760px]">
-                  <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
-                    <tr>
-                      <th className="p-4">PNR</th>
-                      <th className="p-4">Acente</th>
-                      <th className="p-4">Misafirler</th>
-                      <th className="p-4">Hizmet</th>
-                      <th className="p-4">Tarih Aralığı / Adet</th>
-                      <th className="p-4">Tutar</th>
-                      {!isSuperAdmin && <th className="p-4">Komisyon</th>}
-                      <th className="p-4">İşlem</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {visibleBookings.map((b, idx) => (
-                      <tr key={idx} className="hover:bg-slate-800/30">
-                        <td className="p-4 font-mono font-bold text-indigo-400">{b.pnr}</td>
-                        <td className="p-4 text-xs">
-                          <span className="font-semibold text-white block">{b.tenantName}</span>
-                          <span className="text-slate-400">{b.agentName}</span>
-                        </td>
-                        <td className="p-4 text-xs">
-                          <span className="font-semibold text-white block">
-                            {b.guestNames && b.guestNames.length > 0
-                              ? b.guestNames.join(", ")
-                              : b.customerName}
-                          </span>
-                          {b.freeChildCount > 0 && (
-                            <span className="text-emerald-400 block mt-0.5">
-                              + {b.freeChildCount} Çocuk (0-6 Yaş Ücretsiz)
-                              {b.freeChildNames.filter(Boolean).length > 0
-                                ? `: ${b.freeChildNames.filter(Boolean).join(", ")}`
-                                : ""}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4 text-slate-300">{b.itemTitle}</td>
-                        <td className="p-4 text-slate-300 text-xs">
-                          <span className="text-emerald-400 font-semibold block">
-                            {b.startDate === b.endDate
-                              ? b.startDate
-                              : `${b.startDate} → ${b.endDate}`}
-                          </span>
-                          <span className="text-slate-400">
-                            {b.chargedDays} Gün • {b.pax} Kişi
-                          </span>
-                        </td>
-                        <td className="p-4 font-semibold text-white">{b.totalAmount} ₺</td>
-                        {!isSuperAdmin && (
-                          <td className="p-4 font-bold text-emerald-400">+{b.commissionEarned} ₺</td>
-                        )}
-                        <td className="p-4">
-                          <button
-                            onClick={() => sendWhatsAppVoucher(b)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition cursor-pointer"
-                          >
-                            <Send className="w-3.5 h-3.5" /> WhatsApp
-                          </button>
-                        </td>
+
+              <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white">
+                      PNR, Ödeme & Voucher Listesi
+                    </h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      0-6 Yaş Ücretsiz • 7-12 Yaş %50 İndirimli • Tarih güncelleme, iptal ve PDF
+                      voucher aktif
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="bg-[#080c16] hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold px-3.5 py-2 rounded-xl inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" /> CSV İndir
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm min-w-[880px]">
+                    <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
+                      <tr>
+                        <th className="p-4">PNR</th>
+                        <th className="p-4">Acente</th>
+                        <th className="p-4">Misafirler</th>
+                        <th className="p-4">Hizmet</th>
+                        <th className="p-4">Tarih / Süre</th>
+                        <th className="p-4">Tutar & Ödeme</th>
+                        {!isSuperAdmin && <th className="p-4">Komisyon</th>}
+                        <th className="p-4">İşlem</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {visibleBookings.map((b, idx) => {
+                        const isCancelled = b.status === "İptal Edildi";
+                        const bCurrency = getTenantRules(b.tenantId).currency;
+                        return (
+                          <tr
+                            key={`${b.pnr}-${idx}`}
+                            className={`hover:bg-slate-800/30 ${
+                              isCancelled ? "opacity-60" : ""
+                            }`}
+                          >
+                            <td className="p-4 font-mono font-bold text-indigo-400">
+                              <span>{b.pnr}</span>
+                              <span
+                                className={`block text-[10px] font-sans mt-0.5 ${
+                                  isCancelled ? "text-rose-400" : "text-emerald-400"
+                                }`}
+                              >
+                                {b.status}
+                              </span>
+                            </td>
+                            <td className="p-4 text-xs">
+                              <span className="font-semibold text-white block">{b.tenantName}</span>
+                              <span className="text-slate-400">{b.agentName}</span>
+                            </td>
+                            <td className="p-4 text-xs">
+                              <span className="font-semibold text-white block">
+                                {b.guestNames && b.guestNames.length > 0
+                                  ? b.guestNames.join(", ")
+                                  : b.customerName}
+                              </span>
+                              {b.freeChildCount > 0 && (
+                                <span className="text-emerald-400 block mt-0.5">
+                                  + {b.freeChildCount} Çocuk (0-6 Yaş Ücretsiz)
+                                  {b.freeChildNames.filter(Boolean).length > 0
+                                    ? `: ${b.freeChildNames.filter(Boolean).join(", ")}`
+                                    : ""}
+                                </span>
+                              )}
+                              {b.discountedChildCount > 0 && (
+                                <span className="text-sky-400 block mt-0.5">
+                                  + {b.discountedChildCount} Çocuk (7-12 Yaş %50 İnd.)
+                                  {b.discountedChildNames.filter(Boolean).length > 0
+                                    ? `: ${b.discountedChildNames.filter(Boolean).join(", ")}`
+                                    : ""}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 text-slate-300">{b.itemTitle}</td>
+                            <td className="p-4 text-slate-300 text-xs">
+                              <span className="text-emerald-400 font-semibold block">
+                                {b.startDate === b.endDate
+                                  ? b.startDate
+                                  : `${b.startDate} → ${b.endDate}`}
+                              </span>
+                              <span className="text-slate-400">
+                                {b.chargedDays} Gün • {b.pax} Yetişkin
+                              </span>
+                            </td>
+                            <td className="p-4 text-xs">
+                              <span className="font-bold text-white block">
+                                {b.totalAmount} {bCurrency}
+                              </span>
+                              <span className="text-slate-400 block">
+                                {b.paymentStatus} ({b.paidAmount} {bCurrency})
+                              </span>
+                            </td>
+                            {!isSuperAdmin && (
+                              <td className="p-4 font-bold text-emerald-400">
+                                +{b.commissionEarned} {bCurrency}
+                              </td>
+                            )}
+                            <td className="p-4">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  onClick={() => sendWhatsAppVoucher(b)}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                                  title="WhatsApp Voucher"
+                                >
+                                  <Send className="w-3.5 h-3.5" /> WA
+                                </button>
+                                <button
+                                  onClick={() => setPrintVoucherBooking(b)}
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                                  title="Yazdır / PDF Voucher"
+                                >
+                                  <Printer className="w-3.5 h-3.5" /> PDF
+                                </button>
+                                {!isCancelled && (
+                                  <>
+                                    <button
+                                      onClick={() => openRescheduleModal(b)}
+                                      className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-medium px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                                      title="Tarih & Ödeme Güncelle"
+                                    >
+                                      <CalendarCog className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleCancelBooking(b)}
+                                      className="bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs font-medium px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition cursor-pointer"
+                                      title="Rezervasyonu İptal Et"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
         </main>
       </div>
 
+      {/* KONTENJAN EKLE / DÜZENLE MODAL */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -2412,7 +3190,7 @@ export default function TurizmSaaSPanel() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Net Fiyat (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Net Fiyat</label>
                   <input
                     type="number"
                     min={0}
@@ -2424,7 +3202,7 @@ export default function TurizmSaaSPanel() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Satış Fiyatı (₺)</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">Satış Fiyatı</label>
                   <input
                     type="number"
                     min={0}
@@ -2438,7 +3216,9 @@ export default function TurizmSaaSPanel() {
 
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex justify-between items-center">
                 <span className="text-xs text-slate-300">Komisyon:</span>
-                <span className="text-base font-bold text-emerald-400">+{calculatedNewCommission} ₺</span>
+                <span className="text-base font-bold text-emerald-400">
+                  +{calculatedNewCommission} {activeRules.currency}
+                </span>
               </div>
 
               <button
@@ -2452,336 +3232,652 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {selectedItem && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
-              <div className="flex items-center gap-2">
-                <Ticket className="w-5 h-5 text-indigo-400" />
-                <h3 className="font-bold text-white">Rezervasyon & PNR</h3>
-              </div>
-              <button
-                onClick={() => setSelectedItem(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {!lastCreatedBooking ? (
-              <form onSubmit={handleCreateReservation} className="space-y-4">
-                <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl space-y-1.5">
-                  <p className="text-xs text-indigo-400 font-semibold">
-                    {selectedItem.tenantName} • {selectedItem.category}
-                  </p>
-                  <p className="text-sm font-bold text-white">{selectedItem.title}</p>
-                  <p className="text-xs text-slate-400">
-                    <span className="text-white font-semibold">{selectedItem.sellPrice} ₺ / Gün</span> • Kalan:{" "}
-                    <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
-                  </p>
-                  <div className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-300">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-emerald-400" /> {CHECK_IN_RULE}
-                    </span>
-                    <span>•</span>
-                    <span>{CHECK_OUT_RULE}</span>
-                  </div>
+      {/* REZERVASYON & PNR MODAL */}
+      {selectedItem && (() => {
+        const itemRules = getTenantRules(selectedItem.tenantId);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
+                <div className="flex items-center gap-2">
+                  <Ticket className="w-5 h-5 text-indigo-400" />
+                  <h3 className="font-bold text-white">Rezervasyon & PNR</h3>
                 </div>
+                <button
+                  onClick={() => setSelectedItem(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-                {/* BAŞLANGIÇ & BİTİŞ TARİH ARALIĞI SEÇİCİ */}
-                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
-                      <Calendar className="w-4 h-4 text-emerald-400" /> Başlangıç & Bitiş Tarihi
-                    </label>
-                    <div className="flex items-center gap-2 text-[10px]">
-                      <span className="inline-flex items-center gap-1 text-emerald-300">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Seçili
+              {!lastCreatedBooking ? (
+                <form onSubmit={handleCreateReservation} className="space-y-4">
+                  <div className="bg-[#080c16] border border-slate-800 p-3.5 rounded-xl space-y-1.5">
+                    <p className="text-xs text-indigo-400 font-semibold">
+                      {selectedItem.tenantName} • {selectedItem.category}
+                    </p>
+                    <p className="text-sm font-bold text-white">{selectedItem.title}</p>
+                    <p className="text-xs text-slate-400">
+                      <span className="text-white font-semibold">
+                        {selectedItem.sellPrice} {itemRules.currency} / Gün
+                      </span>{" "}
+                      • Kalan:{" "}
+                      <span className="text-emerald-400 font-semibold">{selectedItem.quota}</span>
+                    </p>
+                    <div className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-300">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-emerald-400" /> {itemRules.checkInRule}
                       </span>
-                      <span className="inline-flex items-center gap-1 text-slate-500">
-                        <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Dolu
-                      </span>
+                      <span>•</span>
+                      <span>{itemRules.checkOutRule}</span>
                     </div>
+                  </div>
+
+                  {/* BAŞLANGIÇ & BİTİŞ TARİH ARALIĞI SEÇİCİ */}
+                  <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-emerald-400" /> Başlangıç & Bitiş Tarihi
+                      </label>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="inline-flex items-center gap-1 text-emerald-300">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Seçili
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-slate-500">
+                          <span className="w-2 h-2 rounded-full bg-slate-600 inline-block" /> Dolu
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
+                        <span className="block text-[10px] text-slate-400">
+                          Başlangıç ({itemRules.checkInRule})
+                        </span>
+                        <span className="text-xs font-mono font-bold text-emerald-400">
+                          {startDate || "Seçiniz"}
+                        </span>
+                      </div>
+                      <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
+                        <span className="block text-[10px] text-slate-400">
+                          Bitiş ({itemRules.checkOutRule})
+                        </span>
+                        <span className="text-xs font-mono font-bold text-emerald-400">
+                          {effectiveEndDate || "Seçiniz"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {calendarDays.map((day) => {
+                        const isBlocked = blockedDatesSet.has(day.iso);
+                        const isInRange = !isBlocked && selectedRangeSet.has(day.iso);
+                        const isStartOrEnd =
+                          !isBlocked && (day.iso === startDate || day.iso === effectiveEndDate);
+                        const isCheckoutOnlyDay =
+                          hasCheckoutDay && day.iso === effectiveEndDate && !isBlocked;
+
+                        return (
+                          <button
+                            key={day.iso}
+                            type="button"
+                            disabled={isBlocked}
+                            onClick={() => handleSelectCalendarDay(day.iso)}
+                            title={
+                              isBlocked
+                                ? `${day.iso} - Dolu / Seçilmiş`
+                                : isCheckoutOnlyDay
+                                ? `${day.iso} - Çıkış Günü (fiyata dahil değil)`
+                                : `${day.iso} - Müsait`
+                            }
+                            className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
+                              isBlocked
+                                ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
+                                : isStartOrEnd
+                                ? "bg-emerald-600 border-emerald-300 text-white font-bold shadow-sm cursor-pointer"
+                                : isInRange
+                                ? "bg-emerald-500/35 border-emerald-400/70 text-emerald-100 font-semibold cursor-pointer"
+                                : "bg-slate-800/90 hover:bg-emerald-500/20 border-slate-700 text-white font-medium cursor-pointer"
+                            }`}
+                          >
+                            <span className="text-[9px] opacity-75 leading-tight">{day.weekday}</span>
+                            <span className="text-xs leading-tight">{day.dayNum}</span>
+                            {isCheckoutOnlyDay && (
+                              <span className="text-[8px] font-bold text-emerald-200 leading-none mt-0.5">
+                                Çıkış
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {rangeWarning && (
+                      <p className="text-[11px] text-amber-400">{rangeWarning}</p>
+                    )}
+
+                    {startDate && (
+                      <div className="text-[11px] text-emerald-400 font-mono space-y-0.5">
+                        <p>
+                          Aralık:{" "}
+                          <span className="font-bold">
+                            {startDate === effectiveEndDate
+                              ? `${startDate} (1 Gün)`
+                              : `${startDate} → ${effectiveEndDate}`}
+                          </span>
+                        </p>
+                        <p className="text-slate-300 font-sans">
+                          Fiyata dahil süre:{" "}
+                          <span className="text-emerald-400 font-bold">{chargedDaysCount} Gün</span>
+                          {hasCheckoutDay ? " (son gün çıkış günü olduğu için fiyata dahil değil)" : ""}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* KİŞİ ADEDİ & ÇOCUK KADEMELERİ (0-6 ÜCRETSİZ, 7-12 %50 İNDİRİMLİ) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        13+ Kişi Adedi
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={Math.max(1, selectedItem.quota)}
+                        required
+                        value={paxCount}
+                        onChange={(e) => syncPaxCount(Number(e.target.value))}
+                        className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-emerald-400 font-medium mb-1">
+                        0-6 Yaş (Ücretsiz)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={freeChildCount}
+                        onChange={(e) => syncFreeChildCount(Number(e.target.value))}
+                        className="bg-[#080c16] border border-emerald-500/35 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-sky-400 font-medium mb-1">
+                        7-12 Yaş (%50 İnd.)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={discountedChildCount}
+                        onChange={(e) => syncDiscountedChildCount(Number(e.target.value))}
+                        className="bg-[#080c16] border border-sky-500/35 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* DİNAMİK MİSAFİR ADLARI (1. KİŞİ, 2. KİŞİ, 3. KİŞİ...) */}
+                  <div className="space-y-2.5 bg-[#080c16] border border-slate-800 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-slate-300">
+                      Misafir İsimleri ({paxCount} Kişi)
+                    </p>
+                    {Array.from({ length: paxCount }, (_, idx) => (
+                      <div key={idx}>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          {idx + 1}. Kişi Adı Soyadı
+                        </label>
+                        <div className="flex items-center gap-2 bg-[#0e1422] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3 py-2">
+                          <User className="w-4 h-4 text-slate-500 shrink-0" />
+                          <input
+                            type="text"
+                            required
+                            value={guestNames[idx] || ""}
+                            onChange={(e) => {
+                              const updated = [...guestNames];
+                              updated[idx] = e.target.value;
+                              setGuestNames(updated);
+                            }}
+                            placeholder={`${idx + 1}. Kişi Adı Soyadı`}
+                            className="bg-transparent text-sm text-white w-full focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 0-6 YAŞ ÜCRETSİZ ÇOCUK İSİMLERİ */}
+                  {freeChildCount > 0 && (
+                    <div className="space-y-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                      <p className="text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5">
+                        <Baby className="w-4 h-4" /> 0-6 Yaş Çocuklar (Ücretsiz - {freeChildCount})
+                      </p>
+                      {Array.from({ length: freeChildCount }, (_, idx) => (
+                        <div key={idx}>
+                          <label className="block text-[11px] text-emerald-200/80 mb-1">
+                            {idx + 1}. Çocuk Adı Soyadı (0-6 Yaş • Ücretsiz)
+                          </label>
+                          <input
+                            type="text"
+                            value={freeChildNames[idx] || ""}
+                            onChange={(e) => {
+                              const updated = [...freeChildNames];
+                              updated[idx] = e.target.value;
+                              setFreeChildNames(updated);
+                            }}
+                            placeholder={`${idx + 1}. Çocuk Adı Soyadı`}
+                            className="bg-[#080c16] border border-emerald-500/30 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 7-12 YAŞ %50 İNDİRİMLİ ÇOCUK İSİMLERİ */}
+                  {discountedChildCount > 0 && (
+                    <div className="space-y-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl p-3">
+                      <p className="text-xs font-semibold text-sky-300 inline-flex items-center gap-1.5">
+                        <Baby className="w-4 h-4" /> 7-12 Yaş Çocuklar (%50 İndirimli -{" "}
+                        {discountedChildCount})
+                      </p>
+                      {Array.from({ length: discountedChildCount }, (_, idx) => (
+                        <div key={idx}>
+                          <label className="block text-[11px] text-sky-200/80 mb-1">
+                            {idx + 1}. Çocuk Adı Soyadı (7-12 Yaş • %50 İndirimli)
+                          </label>
+                          <input
+                            type="text"
+                            value={discountedChildNames[idx] || ""}
+                            onChange={(e) => {
+                              const updated = [...discountedChildNames];
+                              updated[idx] = e.target.value;
+                              setDiscountedChildNames(updated);
+                            }}
+                            placeholder={`${idx + 1}. Çocuk Adı Soyadı`}
+                            className="bg-[#080c16] border border-sky-500/30 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ÖDEME DURUMU & KAPORA */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#080c16] border border-slate-800 rounded-xl p-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1 inline-flex items-center gap-1">
+                        <Wallet className="w-3.5 h-3.5 text-indigo-400" /> Ödeme Durumu
+                      </label>
+                      <select
+                        value={paymentStatus}
+                        onChange={(e) => {
+                          const st = e.target.value as PaymentStatus;
+                          setPaymentStatus(st);
+                          if (st === "Ödendi") setDepositAmount(computedTotalAmount);
+                          if (st === "Acente Cari") setDepositAmount(0);
+                        }}
+                        className="bg-[#0e1422] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full focus:outline-none"
+                      >
+                        <option value="Ödendi">Ödendi</option>
+                        <option value="Kapora Alındı">Kapora Alındı</option>
+                        <option value="Acente Cari">Acente Cari</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Alınan Tutar ({itemRules.currency})
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={computedTotalAmount}
+                        disabled={paymentStatus !== "Kapora Alındı"}
+                        value={
+                          paymentStatus === "Ödendi"
+                            ? computedTotalAmount
+                            : paymentStatus === "Acente Cari"
+                            ? 0
+                            : depositAmount
+                        }
+                        onChange={(e) => setDepositAmount(Number(e.target.value))}
+                        className="bg-[#0e1422] disabled:opacity-60 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">İletişim Telefonu</label>
+                    <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
+                      <Phone className="w-4 h-4 text-slate-500 shrink-0" />
+                      <input
+                        type="tel"
+                        required
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="05XX XXX XX XX"
+                        className="bg-transparent text-sm text-white w-full focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Tutar ({chargedDaysCount} Gün × {paxCount} Kişi
+                        {discountedChildCount > 0 ? ` + ${discountedChildCount}×0.5 Çocuk` : ""}
+                        {freeChildCount > 0 ? ` + ${freeChildCount} Çocuk Ücretsiz` : ""})
+                      </p>
+                      <p className="text-lg font-bold text-white">
+                        {computedTotalAmount} {itemRules.currency}
+                      </p>
+                    </div>
+                    {!isSuperAdmin && (
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Komisyon</p>
+                        <p className="text-sm font-bold text-emerald-400">
+                          +{computedCommissionEarned} {itemRules.currency}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={!startDate}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
+                  >
+                    Onayla & PNR Üret
+                  </button>
+                </form>
+              ) : (
+                <div className="text-center space-y-4 py-2">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                    <Sparkles className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-2xl font-mono font-bold text-white mt-1">
+                      {lastCreatedBooking.pnr}
+                    </h4>
+                  </div>
+
+                  <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
+                    <div className="text-slate-300 space-y-0.5">
+                      {lastCreatedBooking.guestNames.map((g, i) => (
+                        <p key={i}>
+                          <span className="text-slate-400">{i + 1}. Kişi:</span>{" "}
+                          <span className="text-white font-semibold">{g}</span>
+                        </p>
+                      ))}
+                    </div>
+                    {lastCreatedBooking.freeChildCount > 0 && (
+                      <p className="text-emerald-400 font-medium">
+                        0-6 Yaş Çocuk (Ücretsiz): {lastCreatedBooking.freeChildCount} Çocuk
+                        {lastCreatedBooking.freeChildNames.filter(Boolean).length > 0
+                          ? ` (${lastCreatedBooking.freeChildNames.filter(Boolean).join(", ")})`
+                          : ""}
+                      </p>
+                    )}
+                    {lastCreatedBooking.discountedChildCount > 0 && (
+                      <p className="text-sky-400 font-medium">
+                        7-12 Yaş Çocuk (%50 İnd.): {lastCreatedBooking.discountedChildCount} Çocuk
+                        {lastCreatedBooking.discountedChildNames.filter(Boolean).length > 0
+                          ? ` (${lastCreatedBooking.discountedChildNames.filter(Boolean).join(", ")})`
+                          : ""}
+                      </p>
+                    )}
+                    <p className="text-slate-400">
+                      <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
+                    </p>
+                    <p className="text-emerald-400 font-semibold">
+                      {lastCreatedBooking.startDate === lastCreatedBooking.endDate
+                        ? `${lastCreatedBooking.startDate} (${lastCreatedBooking.chargedDays} Gün)`
+                        : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.chargedDays} Gün Ücretlendirildi)`}
+                    </p>
+                    <p className="text-slate-400">
+                      {itemRules.checkInRule} • {itemRules.checkOutRule}
+                    </p>
+                    <p className="text-slate-400">
+                      <span className="text-indigo-400 font-bold">
+                        {lastCreatedBooking.totalAmount} {itemRules.currency}
+                      </span>{" "}
+                      • {lastCreatedBooking.paymentStatus} ({lastCreatedBooking.paidAmount}{" "}
+                      {itemRules.currency})
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
-                      <span className="block text-[10px] text-slate-400">
-                        Başlangıç (Giriş &gt; 12:00)
-                      </span>
-                      <span className="text-xs font-mono font-bold text-emerald-400">
-                        {startDate || "Seçiniz"}
-                      </span>
-                    </div>
-                    <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
-                      <span className="block text-[10px] text-slate-400">
-                        Bitiş (Çıkış &lt; 10:00)
-                      </span>
-                      <span className="text-xs font-mono font-bold text-emerald-400">
-                        {effectiveEndDate || "Seçiniz"}
-                      </span>
-                    </div>
+                    <button
+                      onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Send className="w-4 h-4" /> WhatsApp Voucher
+                    </button>
+                    <button
+                      onClick={() => setPrintVoucherBooking(lastCreatedBooking)}
+                      className="bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" /> Yazdır / PDF
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {calendarDays.map((day) => {
-                      const isBlocked = blockedDatesSet.has(day.iso);
-                      const isInRange = !isBlocked && selectedRangeSet.has(day.iso);
-                      const isStartOrEnd =
-                        !isBlocked && (day.iso === startDate || day.iso === effectiveEndDate);
-                      const isCheckoutOnlyDay =
-                        hasCheckoutDay && day.iso === effectiveEndDate && !isBlocked;
-
-                      return (
-                        <button
-                          key={day.iso}
-                          type="button"
-                          disabled={isBlocked}
-                          onClick={() => handleSelectCalendarDay(day.iso)}
-                          title={
-                            isBlocked
-                              ? `${day.iso} - Dolu / Seçilmiş`
-                              : isCheckoutOnlyDay
-                              ? `${day.iso} - Çıkış Günü (<10:00, fiyata dahil değil)`
-                              : `${day.iso} - Müsait`
-                          }
-                          className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
-                            isBlocked
-                              ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
-                              : isStartOrEnd
-                              ? "bg-emerald-600 border-emerald-300 text-white font-bold shadow-sm cursor-pointer"
-                              : isInRange
-                              ? "bg-emerald-500/35 border-emerald-400/70 text-emerald-100 font-semibold cursor-pointer"
-                              : "bg-slate-800/90 hover:bg-emerald-500/20 border-slate-700 text-white font-medium cursor-pointer"
-                          }`}
-                        >
-                          <span className="text-[9px] opacity-75 leading-tight">{day.weekday}</span>
-                          <span className="text-xs leading-tight">{day.dayNum}</span>
-                          {isCheckoutOnlyDay && (
-                            <span className="text-[8px] font-bold text-emerald-200 leading-none mt-0.5">
-                              Çıkış
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {rangeWarning && (
-                    <p className="text-[11px] text-amber-400">{rangeWarning}</p>
-                  )}
-
-                  {startDate && (
-                    <div className="text-[11px] text-emerald-400 font-mono space-y-0.5">
-                      <p>
-                        Aralık:{" "}
-                        <span className="font-bold">
-                          {startDate === effectiveEndDate
-                            ? `${startDate} (1 Gün)`
-                            : `${startDate} → ${effectiveEndDate}`}
-                        </span>
-                      </p>
-                      <p className="text-slate-300 font-sans">
-                        Fiyata dahil süre:{" "}
-                        <span className="text-emerald-400 font-bold">{chargedDaysCount} Gün</span>
-                        {hasCheckoutDay ? " (son gün çıkış günü olduğu için fiyata dahil değil)" : ""}
-                      </p>
-                    </div>
-                  )}
+                  <button
+                    onClick={() => setSelectedItem(null)}
+                    className="w-full text-xs text-slate-400 hover:text-white py-2"
+                  >
+                    Kapat
+                  </button>
                 </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
-                {/* KİŞİ ADEDİ & 0-6 YAŞ ÇOCUK */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Kişi Adedi</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={Math.max(1, selectedItem.quota)}
-                      required
-                      value={paxCount}
-                      onChange={(e) => syncPaxCount(Number(e.target.value))}
-                      className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-emerald-400 font-medium mb-1.5">
-                      0-6 Yaş Çocuk (Ücretsiz)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={10}
-                      value={freeChildCount}
-                      onChange={(e) => syncFreeChildCount(Number(e.target.value))}
-                      className="bg-[#080c16] border border-emerald-500/35 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
-                    />
-                  </div>
-                </div>
+      {/* TARİH & ÖDEME GÜNCELLEME MODAL */}
+      {rescheduleTarget && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-sm p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm">
+                Tarih & Ödeme Güncelle ({rescheduleTarget.pnr})
+              </h3>
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-                {/* KİŞİ ADEDİNE GÖRE DİNAMİK MİSAFİR ADLARI (1. KİŞİ, 2. KİŞİ, 3. KİŞİ...) */}
-                <div className="space-y-2.5 bg-[#080c16] border border-slate-800 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-slate-300">
-                    Misafir İsimleri ({paxCount} Kişi)
-                  </p>
-                  {Array.from({ length: paxCount }, (_, idx) => (
-                    <div key={idx}>
-                      <label className="block text-[11px] text-slate-400 mb-1">
-                        {idx + 1}. Kişi Adı Soyadı
-                      </label>
-                      <div className="flex items-center gap-2 bg-[#0e1422] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3 py-2">
-                        <User className="w-4 h-4 text-slate-500 shrink-0" />
-                        <input
-                          type="text"
-                          required
-                          value={guestNames[idx] || ""}
-                          onChange={(e) => {
-                            const updated = [...guestNames];
-                            updated[idx] = e.target.value;
-                            setGuestNames(updated);
-                          }}
-                          placeholder={`${idx + 1}. Kişi Adı Soyadı`}
-                          className="bg-transparent text-sm text-white w-full focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 0-6 YAŞ ÜCRETSİZ ÇOCUK İSİMLERİ */}
-                {freeChildCount > 0 && (
-                  <div className="space-y-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-                    <p className="text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5">
-                      <Baby className="w-4 h-4" /> 0-6 Yaş Çocuklar (Ücretsiz - {freeChildCount})
-                    </p>
-                    {Array.from({ length: freeChildCount }, (_, idx) => (
-                      <div key={idx}>
-                        <label className="block text-[11px] text-emerald-200/80 mb-1">
-                          {idx + 1}. Çocuk Adı Soyadı (0-6 Yaş • Ücretsiz)
-                        </label>
-                        <input
-                          type="text"
-                          value={freeChildNames[idx] || ""}
-                          onChange={(e) => {
-                            const updated = [...freeChildNames];
-                            updated[idx] = e.target.value;
-                            setFreeChildNames(updated);
-                          }}
-                          placeholder={`${idx + 1}. Çocuk Adı Soyadı`}
-                          className="bg-[#080c16] border border-emerald-500/30 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">İletişim Telefonu</label>
-                  <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                    <Phone className="w-4 h-4 text-slate-500 shrink-0" />
-                    <input
-                      type="tel"
-                      required
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="05XX XXX XX XX"
-                      className="bg-transparent text-sm text-white w-full focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-slate-400">
-                      Tutar ({chargedDaysCount} Gün × {paxCount} Kişi
-                      {freeChildCount > 0 ? ` + ${freeChildCount} Çocuk Ücretsiz` : ""})
-                    </p>
-                    <p className="text-lg font-bold text-white">
-                      {selectedItem.sellPrice * paxCount * chargedDaysCount} ₺
-                    </p>
-                  </div>
-                  {!isSuperAdmin && (
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">Komisyon</p>
-                      <p className="text-sm font-bold text-emerald-400">
-                        +{selectedItem.commission * paxCount * chargedDaysCount} ₺
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!startDate}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold text-sm py-3 rounded-xl transition cursor-pointer"
+            <form onSubmit={handleSaveReschedule} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Başlangıç Tarihi</label>
+                <input
+                  type="date"
+                  required
+                  value={rescheduleStart}
+                  onChange={(e) => setRescheduleStart(e.target.value)}
+                  className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-white w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Bitiş Tarihi</label>
+                <input
+                  type="date"
+                  required
+                  value={rescheduleEnd}
+                  onChange={(e) => setRescheduleEnd(e.target.value)}
+                  className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-white w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Ödeme Durumu</label>
+                <select
+                  value={reschedulePayment}
+                  onChange={(e) => setReschedulePayment(e.target.value as PaymentStatus)}
+                  className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-white w-full"
                 >
-                  Onayla & PNR Üret
-                </button>
-              </form>
-            ) : (
-              <div className="text-center space-y-4 py-2">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                  <Sparkles className="w-6 h-6" />
-                </div>
+                  <option value="Ödendi">Ödendi</option>
+                  <option value="Kapora Alındı">Kapora Alındı</option>
+                  <option value="Acente Cari">Acente Cari</option>
+                </select>
+              </div>
+              {reschedulePayment === "Kapora Alındı" && (
                 <div>
-                  <h4 className="text-2xl font-mono font-bold text-white mt-1">
-                    {lastCreatedBooking.pnr}
-                  </h4>
+                  <label className="block text-slate-400 mb-1">Alınan Kapora Tutarı</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={reschedulePaid}
+                    onChange={(e) => setReschedulePaid(Number(e.target.value))}
+                    className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-white w-full"
+                  />
+                </div>
+              )}
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl transition cursor-pointer"
+              >
+                Güncellemeyi Kaydet
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* YAZDIRILABİLİR / PDF VOUCHER MODAL */}
+      {printVoucherBooking && (() => {
+        const vRules = getTenantRules(printVoucherBooking.tenantId);
+        const remainingBalance = Math.max(
+          0,
+          printVoucherBooking.totalAmount - printVoucherBooking.paidAmount
+        );
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#0e1422] border border-slate-700 rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3 no-print">
+                <h3 className="font-bold text-white text-sm">
+                  Yazdırılabilir Voucher ({printVoucherBooking.pnr})
+                </h3>
+                <button
+                  onClick={() => setPrintVoucherBooking(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div
+                id="printable-voucher-area"
+                className="bg-[#080c16] border border-slate-800 rounded-2xl p-5 space-y-3 text-xs text-slate-200"
+              >
+                <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-indigo-400 font-bold">
+                      {printVoucherBooking.tenantName}
+                    </p>
+                    <h4 className="text-lg font-extrabold text-white mt-0.5">
+                      REZERVASYON VOUCHER
+                    </h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 block">PNR KODU</span>
+                    <span className="text-base font-mono font-bold text-emerald-400">
+                      {printVoucherBooking.pnr}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
-                  <div className="text-slate-300 space-y-0.5">
-                    {lastCreatedBooking.guestNames.map((g, i) => (
-                      <p key={i}>
-                        <span className="text-slate-400">{i + 1}. Kişi:</span>{" "}
-                        <span className="text-white font-semibold">{g}</span>
-                      </p>
-                    ))}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <span className="text-slate-400 block">Hizmet</span>
+                    <strong className="text-white">{printVoucherBooking.itemTitle}</strong>
                   </div>
-                  {lastCreatedBooking.freeChildCount > 0 && (
-                    <p className="text-emerald-400 font-medium">
-                      0-6 Yaş Çocuk (Ücretsiz): {lastCreatedBooking.freeChildCount} Çocuk
-                      {lastCreatedBooking.freeChildNames.filter(Boolean).length > 0
-                        ? ` (${lastCreatedBooking.freeChildNames.filter(Boolean).join(", ")})`
+                  <div>
+                    <span className="text-slate-400 block">Danışman / Acente</span>
+                    <strong className="text-white">{printVoucherBooking.agentName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Tarih Aralığı</span>
+                    <strong className="text-emerald-400">
+                      {printVoucherBooking.startDate} → {printVoucherBooking.endDate} (
+                      {printVoucherBooking.chargedDays} Gün)
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Saat Kuralları</span>
+                    <strong className="text-amber-300">
+                      {vRules.checkInRule} • {vRules.checkOutRule}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-800 pt-2.5 space-y-1">
+                  <span className="text-slate-400 block">
+                    Misafirler ({printVoucherBooking.pax} Kişi):
+                  </span>
+                  <p className="text-white font-semibold">
+                    {(printVoucherBooking.guestNames?.length
+                      ? printVoucherBooking.guestNames
+                      : [printVoucherBooking.customerName]
+                    )
+                      .map((g, idx) => `${idx + 1}. ${g}`)
+                      .join(" • ")}
+                  </p>
+                  {printVoucherBooking.freeChildCount > 0 && (
+                    <p className="text-emerald-400">
+                      0-6 Yaş Çocuk (Ücretsiz): {printVoucherBooking.freeChildCount} Çocuk
+                      {printVoucherBooking.freeChildNames.filter(Boolean).length > 0
+                        ? ` (${printVoucherBooking.freeChildNames.filter(Boolean).join(", ")})`
                         : ""}
                     </p>
                   )}
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
-                  </p>
-                  <p className="text-emerald-400 font-semibold">
-                    {lastCreatedBooking.startDate === lastCreatedBooking.endDate
-                      ? `${lastCreatedBooking.startDate} (${lastCreatedBooking.chargedDays} Gün)`
-                      : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.chargedDays} Gün Ücretlendirildi)`}
-                  </p>
-                  <p className="text-slate-400">
-                    {CHECK_IN_RULE} • {CHECK_OUT_RULE}
-                  </p>
-                  <p className="text-slate-400">
-                    <span className="text-indigo-400 font-bold">
-                      {lastCreatedBooking.totalAmount} ₺
-                    </span>
-                  </p>
+                  {printVoucherBooking.discountedChildCount > 0 && (
+                    <p className="text-sky-400">
+                      7-12 Yaş Çocuk (%50 İnd.): {printVoucherBooking.discountedChildCount} Çocuk
+                      {printVoucherBooking.discountedChildNames.filter(Boolean).length > 0
+                        ? ` (${printVoucherBooking.discountedChildNames.filter(Boolean).join(", ")})`
+                        : ""}
+                    </p>
+                  )}
                 </div>
 
-                <button
-                  onClick={() => sendWhatsAppVoucher(lastCreatedBooking)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm py-3 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
-                >
-                  <Send className="w-4 h-4" /> WhatsApp Voucher Gönder
-                </button>
+                <div className="border-t border-slate-800 pt-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-slate-400">Ödeme: </span>
+                    <strong className="text-white">
+                      {printVoucherBooking.paymentStatus} ({printVoucherBooking.paidAmount}{" "}
+                      {vRules.currency} • Kalan: {remainingBalance} {vRules.currency})
+                    </strong>
+                  </div>
+                  <div className="text-sm font-extrabold text-indigo-400">
+                    Toplam: {printVoucherBooking.totalAmount} {vRules.currency}
+                  </div>
+                </div>
+              </div>
 
+              <div className="flex gap-2.5 no-print">
                 <button
-                  onClick={() => setSelectedItem(null)}
-                  className="w-full text-xs text-slate-400 hover:text-white py-2"
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" /> Yazdır / PDF Kaydet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintVoucherBooking(null)}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer"
                 >
                   Kapat
                 </button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
