@@ -32,6 +32,7 @@ import {
   Pencil,
   ImagePlus,
   Clock,
+  Baby,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
@@ -79,6 +80,9 @@ interface BookingItem {
   agentUsername: string;
   agentName: string;
   customerName: string;
+  guestNames: string[];
+  freeChildCount: number;
+  freeChildNames: string[];
   customerPhone: string;
   itemTitle: string;
   pax: number;
@@ -540,6 +544,9 @@ export default function TurizmSaaSPanel() {
       agentUsername: "akdeniz_alt1",
       agentName: "Mert Arslan",
       customerName: "Ahmet Yılmaz",
+      guestNames: ["Ahmet Yılmaz"],
+      freeChildCount: 0,
+      freeChildNames: [],
       customerPhone: "905551112233",
       itemTitle: "Kızkalesi Panorama Butik Otel",
       pax: 1,
@@ -557,6 +564,9 @@ export default function TurizmSaaSPanel() {
       agentUsername: "erdemli_alt1",
       agentName: "Deniz Koç",
       customerName: "Caner Özkan",
+      guestNames: ["Caner Özkan"],
+      freeChildCount: 1,
+      freeChildNames: ["Efe Özkan"],
       customerPhone: "905557778899",
       itemTitle: "Silifke Sahil Aile Pansiyonu",
       pax: 1,
@@ -570,7 +580,9 @@ export default function TurizmSaaSPanel() {
   ]);
 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [customerName, setCustomerName] = useState("");
+  const [guestNames, setGuestNames] = useState<string[]>([""]);
+  const [freeChildCount, setFreeChildCount] = useState<number>(0);
+  const [freeChildNames, setFreeChildNames] = useState<string[]>([]);
   const [customerPhone, setCustomerPhone] = useState("");
   const [paxCount, setPaxCount] = useState(1);
   const [startDate, setStartDate] = useState<string>("");
@@ -1019,6 +1031,30 @@ export default function TurizmSaaSPanel() {
     setNewSellPrice(1300);
   };
 
+  const syncPaxCount = (nextPax: number) => {
+    const safePax = Math.max(1, Math.min(selectedItem?.quota || 99, nextPax));
+    setPaxCount(safePax);
+    setGuestNames((prev) => {
+      if (safePax === prev.length) return prev;
+      if (safePax > prev.length) {
+        return [...prev, ...Array.from({ length: safePax - prev.length }, () => "")];
+      }
+      return prev.slice(0, safePax);
+    });
+  };
+
+  const syncFreeChildCount = (nextChildCount: number) => {
+    const safeCount = Math.max(0, Math.min(10, nextChildCount));
+    setFreeChildCount(safeCount);
+    setFreeChildNames((prev) => {
+      if (safeCount === prev.length) return prev;
+      if (safeCount > prev.length) {
+        return [...prev, ...Array.from({ length: safeCount - prev.length }, () => "")];
+      }
+      return prev.slice(0, safeCount);
+    });
+  };
+
   const openBookingModal = (item: InventoryItem) => {
     const blocked = new Set(item.bookedDates || []);
     const firstAvailable = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
@@ -1026,9 +1062,11 @@ export default function TurizmSaaSPanel() {
     setStartDate(firstAvailable);
     setEndDate(firstAvailable);
     setRangeWarning("");
-    setCustomerName("");
-    setCustomerPhone("");
     setPaxCount(1);
+    setGuestNames([""]);
+    setFreeChildCount(0);
+    setFreeChildNames([]);
+    setCustomerPhone("");
     setLastCreatedBooking(null);
   };
 
@@ -1079,7 +1117,6 @@ export default function TurizmSaaSPanel() {
   const effectiveEndDate = startDate ? (endDate && endDate >= startDate ? endDate : startDate) : "";
   const hasCheckoutDay = Boolean(startDate && effectiveEndDate && effectiveEndDate > startDate);
 
-  // Son gün çıkış günü olduğu için fiyata dahil edilmez (en az 1 gün/gece ücretlendirilir)
   const chargedDaysCount = Math.max(
     1,
     hasCheckoutDay ? selectedRangeIsos.length - 1 : selectedRangeIsos.length
@@ -1087,15 +1124,20 @@ export default function TurizmSaaSPanel() {
 
   const handleCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !currentUser ||
-      !selectedItem ||
-      !startDate ||
-      !customerName.trim() ||
-      !customerPhone.trim()
-    ) {
+    if (!currentUser || !selectedItem || !startDate || !customerPhone.trim()) {
       return;
     }
+
+    const normalizedGuests = Array.from({ length: paxCount }, (_, i) =>
+      (guestNames[i] || "").trim()
+    );
+    if (normalizedGuests.some((name) => !name)) {
+      return;
+    }
+
+    const normalizedChildren = Array.from({ length: freeChildCount }, (_, i) =>
+      (freeChildNames[i] || "").trim()
+    );
 
     const finalEndDate = effectiveEndDate || startDate;
     const randomPnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1104,13 +1146,17 @@ export default function TurizmSaaSPanel() {
       ? cleanPhone
       : `90${cleanPhone.replace(/^0/, "")}`;
 
+    // 0-6 yaş çocuk ücretsiz olduğu için tutar ve komisyon yalnızca ücretli kişi adedi * ücretli gün üzerinden hesaplanır
     const newBooking: BookingItem = {
       pnr: randomPnr,
       tenantId: selectedItem.tenantId,
       tenantName: selectedItem.tenantName,
       agentUsername: currentUser.username,
       agentName: currentUser.fullName,
-      customerName: customerName.trim(),
+      customerName: normalizedGuests[0],
+      guestNames: normalizedGuests,
+      freeChildCount,
+      freeChildNames: normalizedChildren,
       customerPhone: formattedPhone,
       itemTitle: selectedItem.title,
       pax: paxCount,
@@ -1152,15 +1198,28 @@ export default function TurizmSaaSPanel() {
         ? `${b.startDate} (${b.chargedDays} Gün)`
         : `${b.startDate} → ${b.endDate} (Fiyata Dahil: ${b.chargedDays} Gün; Son gün çıkış)`;
 
+    const guestsSummary =
+      b.guestNames && b.guestNames.length > 0
+        ? b.guestNames.map((g, idx) => `${idx + 1}. Kişi: ${g}`).join(", ")
+        : b.customerName;
+
+    const childSummary =
+      b.freeChildCount > 0
+        ? `\n*0-6 Yaş Çocuk (Ücretsiz):* ${b.freeChildCount} Çocuk${
+            b.freeChildNames.filter(Boolean).length > 0
+              ? ` (${b.freeChildNames.filter(Boolean).join(", ")})`
+              : ""
+          }`
+        : "";
+
     const voucherText =
       `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
       `----------------------------------\n` +
       `*PNR Kodu:* ${b.pnr}\n` +
-      `*Misafir:* ${b.customerName}\n` +
+      `*Kişi Adedi:* ${b.pax} Kişi (${guestsSummary})${childSummary}\n` +
       `*Hizmet:* ${b.itemTitle}\n` +
       `*Tarih Aralığı:* ${dateLabel}\n` +
       `*Saat Kuralı:* ${CHECK_IN_RULE} | ${CHECK_OUT_RULE}\n` +
-      `*Kişi / Adet:* ${b.pax}\n` +
       `*Toplam Tutar:* ${b.totalAmount} ₺\n` +
       `*Durum:* ${b.status}\n` +
       `----------------------------------\n` +
@@ -1727,7 +1786,7 @@ export default function TurizmSaaSPanel() {
                     Kontenjan & Satış Havuzu
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                    {PLAN_SPECS[currentPlan].summary} • {CHECK_IN_RULE} • {CHECK_OUT_RULE}
+                    {PLAN_SPECS[currentPlan].summary} • {CHECK_IN_RULE} • {CHECK_OUT_RULE} • 0-6 Yaş Ücretsiz
                   </p>
                 </div>
 
@@ -2158,16 +2217,16 @@ export default function TurizmSaaSPanel() {
               <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white">PNR & Voucher</h2>
                 <span className="text-[11px] text-slate-400">
-                  {CHECK_IN_RULE} • {CHECK_OUT_RULE}
+                  {CHECK_IN_RULE} • {CHECK_OUT_RULE} • 0-6 Yaş Ücretsiz
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm min-w-[700px]">
+                <table className="w-full text-left text-sm min-w-[760px]">
                   <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                     <tr>
                       <th className="p-4">PNR</th>
                       <th className="p-4">Acente</th>
-                      <th className="p-4">Misafir</th>
+                      <th className="p-4">Misafirler</th>
                       <th className="p-4">Hizmet</th>
                       <th className="p-4">Tarih Aralığı / Adet</th>
                       <th className="p-4">Tutar</th>
@@ -2183,7 +2242,21 @@ export default function TurizmSaaSPanel() {
                           <span className="font-semibold text-white block">{b.tenantName}</span>
                           <span className="text-slate-400">{b.agentName}</span>
                         </td>
-                        <td className="p-4 font-medium text-white">{b.customerName}</td>
+                        <td className="p-4 text-xs">
+                          <span className="font-semibold text-white block">
+                            {b.guestNames && b.guestNames.length > 0
+                              ? b.guestNames.join(", ")
+                              : b.customerName}
+                          </span>
+                          {b.freeChildCount > 0 && (
+                            <span className="text-emerald-400 block mt-0.5">
+                              + {b.freeChildCount} Çocuk (0-6 Yaş Ücretsiz)
+                              {b.freeChildNames.filter(Boolean).length > 0
+                                ? `: ${b.freeChildNames.filter(Boolean).join(", ")}`
+                                : ""}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-4 text-slate-300">{b.itemTitle}</td>
                         <td className="p-4 text-slate-300 text-xs">
                           <span className="text-emerald-400 font-semibold block">
@@ -2192,7 +2265,7 @@ export default function TurizmSaaSPanel() {
                               : `${b.startDate} → ${b.endDate}`}
                           </span>
                           <span className="text-slate-400">
-                            {b.chargedDays} Gün • {b.pax} Adet
+                            {b.chargedDays} Gün • {b.pax} Kişi
                           </span>
                         </td>
                         <td className="p-4 font-semibold text-white">{b.totalAmount} ₺</td>
@@ -2431,7 +2504,6 @@ export default function TurizmSaaSPanel() {
                     </div>
                   </div>
 
-                  {/* Başlangıç ve Bitiş Özeti */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-[#0e1422] border border-emerald-500/30 rounded-lg px-2.5 py-1.5">
                       <span className="block text-[10px] text-slate-400">
@@ -2518,46 +2590,102 @@ export default function TurizmSaaSPanel() {
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1.5">Misafir Adı Soyadı</label>
-                  <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                    <User className="w-4 h-4 text-slate-500 shrink-0" />
+                {/* KİŞİ ADEDİ & 0-6 YAŞ ÇOCUK */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">Kişi Adedi</label>
                     <input
-                      type="text"
+                      type="number"
+                      min={1}
+                      max={Math.max(1, selectedItem.quota)}
                       required
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Ad Soyad"
-                      className="bg-transparent text-sm text-white w-full focus:outline-none"
+                      value={paxCount}
+                      onChange={(e) => syncPaxCount(Number(e.target.value))}
+                      className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-emerald-400 font-medium mb-1.5">
+                      0-6 Yaş Çocuk (Ücretsiz)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={freeChildCount}
+                      onChange={(e) => syncFreeChildCount(Number(e.target.value))}
+                      className="bg-[#080c16] border border-emerald-500/35 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Telefon</label>
-                    <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
-                      <Phone className="w-4 h-4 text-slate-500 shrink-0" />
-                      <input
-                        type="tel"
-                        required
-                        value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
-                        placeholder="05XX XXX XX XX"
-                        className="bg-transparent text-sm text-white w-full focus:outline-none"
-                      />
+                {/* KİŞİ ADEDİNE GÖRE DİNAMİK MİSAFİR ADLARI (1. KİŞİ, 2. KİŞİ, 3. KİŞİ...) */}
+                <div className="space-y-2.5 bg-[#080c16] border border-slate-800 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-slate-300">
+                    Misafir İsimleri ({paxCount} Kişi)
+                  </p>
+                  {Array.from({ length: paxCount }, (_, idx) => (
+                    <div key={idx}>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        {idx + 1}. Kişi Adı Soyadı
+                      </label>
+                      <div className="flex items-center gap-2 bg-[#0e1422] border border-slate-700 focus-within:border-indigo-500 rounded-xl px-3 py-2">
+                        <User className="w-4 h-4 text-slate-500 shrink-0" />
+                        <input
+                          type="text"
+                          required
+                          value={guestNames[idx] || ""}
+                          onChange={(e) => {
+                            const updated = [...guestNames];
+                            updated[idx] = e.target.value;
+                            setGuestNames(updated);
+                          }}
+                          placeholder={`${idx + 1}. Kişi Adı Soyadı`}
+                          className="bg-transparent text-sm text-white w-full focus:outline-none"
+                        />
+                      </div>
                     </div>
+                  ))}
+                </div>
+
+                {/* 0-6 YAŞ ÜCRETSİZ ÇOCUK İSİMLERİ */}
+                {freeChildCount > 0 && (
+                  <div className="space-y-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5">
+                      <Baby className="w-4 h-4" /> 0-6 Yaş Çocuklar (Ücretsiz - {freeChildCount})
+                    </p>
+                    {Array.from({ length: freeChildCount }, (_, idx) => (
+                      <div key={idx}>
+                        <label className="block text-[11px] text-emerald-200/80 mb-1">
+                          {idx + 1}. Çocuk Adı Soyadı (0-6 Yaş • Ücretsiz)
+                        </label>
+                        <input
+                          type="text"
+                          value={freeChildNames[idx] || ""}
+                          onChange={(e) => {
+                            const updated = [...freeChildNames];
+                            updated[idx] = e.target.value;
+                            setFreeChildNames(updated);
+                          }}
+                          placeholder={`${idx + 1}. Çocuk Adı Soyadı`}
+                          className="bg-[#080c16] border border-emerald-500/30 rounded-xl px-3 py-2 text-sm text-white w-full focus:outline-none"
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1.5">Adet</label>
+                )}
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">İletişim Telefonu</label>
+                  <div className="flex items-center gap-2 bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5">
+                    <Phone className="w-4 h-4 text-slate-500 shrink-0" />
                     <input
-                      type="number"
-                      min={1}
-                      max={selectedItem.quota}
+                      type="tel"
                       required
-                      value={paxCount}
-                      onChange={(e) => setPaxCount(Number(e.target.value))}
-                      className="bg-[#080c16] border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white w-full focus:outline-none"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="05XX XXX XX XX"
+                      className="bg-transparent text-sm text-white w-full focus:outline-none"
                     />
                   </div>
                 </div>
@@ -2565,7 +2693,8 @@ export default function TurizmSaaSPanel() {
                 <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 flex justify-between items-center">
                   <div>
                     <p className="text-xs text-slate-400">
-                      Tutar ({chargedDaysCount} Gün × {paxCount} Adet)
+                      Tutar ({chargedDaysCount} Gün × {paxCount} Kişi
+                      {freeChildCount > 0 ? ` + ${freeChildCount} Çocuk Ücretsiz` : ""})
                     </p>
                     <p className="text-lg font-bold text-white">
                       {selectedItem.sellPrice * paxCount * chargedDaysCount} ₺
@@ -2601,9 +2730,22 @@ export default function TurizmSaaSPanel() {
                 </div>
 
                 <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3.5 text-left text-xs space-y-1.5">
-                  <p className="text-slate-400">
-                    <span className="text-white font-medium">{lastCreatedBooking.customerName}</span>
-                  </p>
+                  <div className="text-slate-300 space-y-0.5">
+                    {lastCreatedBooking.guestNames.map((g, i) => (
+                      <p key={i}>
+                        <span className="text-slate-400">{i + 1}. Kişi:</span>{" "}
+                        <span className="text-white font-semibold">{g}</span>
+                      </p>
+                    ))}
+                  </div>
+                  {lastCreatedBooking.freeChildCount > 0 && (
+                    <p className="text-emerald-400 font-medium">
+                      0-6 Yaş Çocuk (Ücretsiz): {lastCreatedBooking.freeChildCount} Çocuk
+                      {lastCreatedBooking.freeChildNames.filter(Boolean).length > 0
+                        ? ` (${lastCreatedBooking.freeChildNames.filter(Boolean).join(", ")})`
+                        : ""}
+                    </p>
+                  )}
                   <p className="text-slate-400">
                     <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
                   </p>
