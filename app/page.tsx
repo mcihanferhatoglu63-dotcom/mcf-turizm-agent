@@ -40,6 +40,8 @@ import {
   CalendarCog,
   Wallet,
   RefreshCw,
+  MessageSquare,
+  Globe,
 } from "lucide-react";
 
 type UserRole = "SUPER_ADMIN" | "TENANT_ADMIN" | "SUB_AGENT";
@@ -59,6 +61,8 @@ interface TenantAgency {
   checkInTime: string;
   checkOutTime: string;
   currency: "₺" | "$" | "€";
+  contactPhone?: string;
+  notifyWebhookUrl?: string;
 }
 
 interface UserAccount {
@@ -99,6 +103,7 @@ interface BookingItem {
   discountedChildCount: number;
   discountedChildNames: string[];
   customerPhone: string;
+  customerEmail?: string;
   itemTitle: string;
   pax: number;
   startDate: string;
@@ -110,6 +115,7 @@ interface BookingItem {
   commissionEarned: number;
   status: BookingStatus;
   createdAt?: string;
+  channel?: "Müşteri Vitrini" | "Acente Paneli";
 }
 
 interface PlanSpec {
@@ -295,6 +301,12 @@ function buildUpcomingDays(count = 28, startIso = "2026-11-21"): CalendarDayItem
   return list;
 }
 
+function normalizePhoneTr(raw: string): string {
+  const clean = raw.replace(/\D/g, "");
+  if (!clean) return "";
+  return clean.startsWith("90") ? clean : `90${clean.replace(/^0/, "")}`;
+}
+
 function normalizeFirebaseUrl(rawUrl: string): string {
   const cleaned = rawUrl.trim().replace(/\/+$/, "");
   if (!cleaned) return "";
@@ -395,6 +407,8 @@ export default function TurizmSaaSPanel() {
       checkInTime: "12:00",
       checkOutTime: "10:00",
       currency: "₺",
+      contactPhone: "905550001122",
+      notifyWebhookUrl: "",
     },
     {
       id: "FIRM-ERDEMLI",
@@ -407,6 +421,8 @@ export default function TurizmSaaSPanel() {
       checkInTime: "12:00",
       checkOutTime: "10:00",
       currency: "₺",
+      contactPhone: "905550003344",
+      notifyWebhookUrl: "",
     },
     {
       id: "FIRM-DEMO",
@@ -419,6 +435,8 @@ export default function TurizmSaaSPanel() {
       checkInTime: "12:00",
       checkOutTime: "10:00",
       currency: "₺",
+      contactPhone: "905550005566",
+      notifyWebhookUrl: "",
     },
   ]);
 
@@ -607,6 +625,7 @@ export default function TurizmSaaSPanel() {
       paymentStatus: "Ödendi",
       commissionEarned: 600,
       status: "Onaylandı",
+      channel: "Acente Paneli",
     },
     {
       pnr: "MCF-4823",
@@ -631,8 +650,24 @@ export default function TurizmSaaSPanel() {
       paymentStatus: "Kapora Alındı",
       commissionEarned: 200,
       status: "Onaylandı",
+      channel: "Acente Paneli",
     },
   ]);
+
+  // Doğrudan Müşteri Rezervasyon Vitrin State'leri (Giriş yapmadan rezervasyon akışı)
+  const [pubItemId, setPubItemId] = useState<string>("HTL-01");
+  const [pubStartDate, setPubStartDate] = useState<string>("");
+  const [pubEndDate, setPubEndDate] = useState<string>("");
+  const [pubPax, setPubPax] = useState<number>(1);
+  const [pubGuestNames, setPubGuestNames] = useState<string[]>([""]);
+  const [pubFreeChild, setPubFreeChild] = useState<number>(0);
+  const [pubDiscChild, setPubDiscChild] = useState<number>(0);
+  const [pubPhone, setPubPhone] = useState<string>("");
+  const [pubEmail, setPubEmail] = useState<string>("");
+  const [pubPayment, setPubPayment] = useState<PaymentStatus>("Kapora Alındı");
+  const [pubDeposit, setPubDeposit] = useState<number>(0);
+  const [pubWebhookStatus, setPubWebhookStatus] = useState<string>("");
+  const [pubCreatedBooking, setPubCreatedBooking] = useState<BookingItem | null>(null);
 
   useEffect(() => {
     const clientToday = formatIsoDate(new Date());
@@ -659,7 +694,10 @@ export default function TurizmSaaSPanel() {
           const parsed = JSON.parse(rawLocal) as PersistedState;
           if (parsed.tenants?.length) setTenants(parsed.tenants);
           if (parsed.accounts?.length) setAccounts(parsed.accounts);
-          if (parsed.inventory?.length) setInventory(parsed.inventory);
+          if (parsed.inventory?.length) {
+            setInventory(parsed.inventory);
+            setPubItemId(parsed.inventory[0].id);
+          }
           if (parsed.bookings?.length) setBookings(parsed.bookings);
           if (parsed.updatedAt) setLastSyncedAt(parsed.updatedAt);
         } catch {
@@ -688,6 +726,7 @@ export default function TurizmSaaSPanel() {
             setTenants(data.tenants);
             setAccounts(data.accounts);
             setInventory(data.inventory);
+            setPubItemId(data.inventory[0].id);
             if (Array.isArray(data.bookings)) setBookings(data.bookings);
             if (data.updatedAt) setLastSyncedAt(data.updatedAt);
           }
@@ -755,6 +794,176 @@ export default function TurizmSaaSPanel() {
 
     return () => clearTimeout(timer);
   }, [hydrated, tenants, accounts, inventory, bookings, firebaseDbUrl]);
+
+  // Müşteri vitrini için seçili hizmet ve tarihler
+  const selectedPubItem = useMemo(
+    () => inventory.find((i) => i.id === pubItemId) || inventory[0] || null,
+    [inventory, pubItemId]
+  );
+
+  useEffect(() => {
+    if (!selectedPubItem || !calendarDays.length) return;
+    const blocked = new Set(selectedPubItem.bookedDates || []);
+    const firstAvail = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
+    setPubStartDate(firstAvail);
+    setPubEndDate(firstAvail);
+    setPubCreatedBooking(null);
+    setPubWebhookStatus("");
+  }, [pubItemId, calendarDays, selectedPubItem]);
+
+  const pubEffectiveEnd =
+    pubStartDate && pubEndDate && pubEndDate >= pubStartDate ? pubEndDate : pubStartDate;
+  const pubHasCheckout = Boolean(pubStartDate && pubEffectiveEnd && pubEffectiveEnd > pubStartDate);
+
+  const pubRangeIsos = useMemo(() => {
+    if (!pubStartDate) return [];
+    const sIdx = calendarDays.findIndex((d) => d.iso === pubStartDate);
+    const eIdx = calendarDays.findIndex((d) => d.iso === pubEffectiveEnd);
+    if (sIdx === -1 || eIdx === -1) return [pubStartDate];
+    return calendarDays.slice(sIdx, eIdx + 1).map((d) => d.iso);
+  }, [calendarDays, pubStartDate, pubEffectiveEnd]);
+
+  const pubChargedDays = Math.max(
+    1,
+    pubHasCheckout ? pubRangeIsos.length - 1 : pubRangeIsos.length
+  );
+  const pubUnits = pubPax + pubDiscChild * 0.5;
+  const pubTotalAmount = selectedPubItem
+    ? Math.round(selectedPubItem.sellPrice * pubUnits * pubChargedDays)
+    : 0;
+  const pubCommission = selectedPubItem
+    ? Math.round(selectedPubItem.commission * pubUnits * pubChargedDays)
+    : 0;
+
+  const handleSelectPubDay = (iso: string) => {
+    if (!selectedPubItem) return;
+    const blocked = new Set(selectedPubItem.bookedDates || []);
+    if (blocked.has(iso)) return;
+    if (!pubStartDate || (pubStartDate && pubEndDate && pubStartDate !== pubEndDate) || iso < pubStartDate) {
+      setPubStartDate(iso);
+      setPubEndDate(iso);
+      return;
+    }
+    if (iso === pubStartDate) {
+      setPubEndDate(iso);
+      return;
+    }
+    const sIdx = calendarDays.findIndex((d) => d.iso === pubStartDate);
+    const eIdx = calendarDays.findIndex((d) => d.iso === iso);
+    if (sIdx !== -1 && eIdx !== -1 && eIdx > sIdx) {
+      const hasBlocked = calendarDays.slice(sIdx, eIdx + 1).some((d) => blocked.has(d.iso));
+      if (hasBlocked) {
+        setPubStartDate(iso);
+        setPubEndDate(iso);
+        return;
+      }
+    }
+    setPubEndDate(iso);
+  };
+
+  const syncPubPax = (next: number) => {
+    const safe = Math.max(1, Math.min(selectedPubItem?.quota || 20, next));
+    setPubPax(safe);
+    setPubGuestNames((prev) => {
+      if (safe === prev.length) return prev;
+      if (safe > prev.length) {
+        return [...prev, ...Array.from({ length: safe - prev.length }, () => "")];
+      }
+      return prev.slice(0, safe);
+    });
+  };
+
+  const triggerExternalWebhook = async (tenantObj: TenantAgency | null, booking: BookingItem) => {
+    const url = tenantObj?.notifyWebhookUrl?.trim();
+    if (!url) return;
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "NEW_RESERVATION",
+          pnr: booking.pnr,
+          tenant: booking.tenantName,
+          service: booking.itemTitle,
+          guests: booking.guestNames,
+          phone: booking.customerPhone,
+          email: booking.customerEmail || "",
+          startDate: booking.startDate,
+          endDate: booking.endDate,
+          chargedDays: booking.chargedDays,
+          totalAmount: booking.totalAmount,
+          paymentStatus: booking.paymentStatus,
+          channel: booking.channel || "Müşteri Vitrini",
+        }),
+      });
+      setPubWebhookStatus("Bildirim webhook / e-posta servisine gönderildi.");
+    } catch {
+      setPubWebhookStatus("Webhook gönderimi denenemedi; WhatsApp ile paylaşabilirsiniz.");
+    }
+  };
+
+  const handlePublicCustomerBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPubItem || !pubStartDate || !pubPhone.trim()) return;
+    const guests = Array.from({ length: pubPax }, (_, i) => (pubGuestNames[i] || "").trim());
+    if (guests.some((g) => !g)) return;
+
+    const finalEnd = pubEffectiveEnd || pubStartDate;
+    const pnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
+    const formattedPhone = normalizePhoneTr(pubPhone);
+    const paid =
+      pubPayment === "Ödendi"
+        ? pubTotalAmount
+        : pubPayment === "Acente Cari"
+        ? 0
+        : Math.min(pubTotalAmount, Math.max(0, pubDeposit));
+
+    const parentTenant = tenants.find((t) => t.id === selectedPubItem.tenantId) || null;
+
+    const created: BookingItem = {
+      pnr,
+      tenantId: selectedPubItem.tenantId,
+      tenantName: selectedPubItem.tenantName,
+      agentUsername: "musteri_vitrin",
+      agentName: "Müşteri Rezervasyonu",
+      customerName: guests[0],
+      guestNames: guests,
+      freeChildCount: pubFreeChild,
+      freeChildNames: [],
+      discountedChildCount: pubDiscChild,
+      discountedChildNames: [],
+      customerPhone: formattedPhone,
+      customerEmail: pubEmail.trim() || undefined,
+      itemTitle: selectedPubItem.title,
+      pax: pubPax,
+      startDate: pubStartDate,
+      endDate: finalEnd,
+      chargedDays: pubChargedDays,
+      totalAmount: pubTotalAmount,
+      paidAmount: paid,
+      paymentStatus: pubPayment,
+      commissionEarned: pubCommission,
+      status: "Onaylandı",
+      createdAt: todayIso,
+      channel: "Müşteri Vitrini",
+    };
+
+    setBookings((prev) => [created, ...prev]);
+    setInventory((prev) =>
+      prev.map((inv) =>
+        inv.id === selectedPubItem.id
+          ? {
+              ...inv,
+              quota: Math.max(0, inv.quota - pubPax),
+              bookedDates: Array.from(new Set([...(inv.bookedDates || []), ...pubRangeIsos])),
+            }
+          : inv
+      )
+    );
+
+    setPubCreatedBooking(created);
+    await triggerExternalWebhook(parentTenant, created);
+  };
 
   const handleSaveFirebaseUrl = (e: React.FormEvent) => {
     e.preventDefault();
@@ -851,6 +1060,7 @@ export default function TurizmSaaSPanel() {
     const currency = t?.currency || "₺";
     return {
       currency,
+      contactPhone: t?.contactPhone || "",
       checkInRule: `Giriş: ${inTime} sonrası`,
       checkOutRule: `Çıkış / Oda boşaltma: ${outTime} öncesi`,
       shortRule: `Giriş >${inTime} • Çıkış <${outTime}`,
@@ -983,7 +1193,12 @@ export default function TurizmSaaSPanel() {
 
   const handleUpdateTenantRules = (
     tenantId: string,
-    patch: Partial<Pick<TenantAgency, "checkInTime" | "checkOutTime" | "currency" | "expiresAt">>
+    patch: Partial<
+      Pick<
+        TenantAgency,
+        "checkInTime" | "checkOutTime" | "currency" | "expiresAt" | "contactPhone" | "notifyWebhookUrl"
+      >
+    >
   ) => {
     if (!currentUser || currentUser.role === "SUB_AGENT") return;
     if (currentUser.role === "TENANT_ADMIN" && currentUser.tenantId !== tenantId) return;
@@ -1015,6 +1230,8 @@ export default function TurizmSaaSPanel() {
       checkInTime: "12:00",
       checkOutTime: "10:00",
       currency: "₺",
+      contactPhone: "",
+      notifyWebhookUrl: "",
     };
 
     const createdOwner: UserAccount = {
@@ -1446,10 +1663,7 @@ export default function TurizmSaaSPanel() {
 
     const finalEndDate = effectiveEndDate || startDate;
     const randomPnr = `MCF-${Math.floor(1000 + Math.random() * 9000)}`;
-    const cleanPhone = customerPhone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.startsWith("90")
-      ? cleanPhone
-      : `90${cleanPhone.replace(/^0/, "")}`;
+    const formattedPhone = normalizePhoneTr(customerPhone);
 
     const resolvedPaidAmount =
       paymentStatus === "Ödendi"
@@ -1482,6 +1696,7 @@ export default function TurizmSaaSPanel() {
       commissionEarned: computedCommissionEarned,
       status: "Onaylandı",
       createdAt: todayIso,
+      channel: "Acente Paneli",
     };
 
     setBookings([newBooking, ...bookings]);
@@ -1594,6 +1809,7 @@ export default function TurizmSaaSPanel() {
   const handleExportCsv = () => {
     const headers = [
       "PNR",
+      "Kanal",
       "Acente",
       "Danisman",
       "Misafirler",
@@ -1612,6 +1828,7 @@ export default function TurizmSaaSPanel() {
 
     const rows = visibleBookings.map((b) => [
       b.pnr,
+      b.channel || "Acente Paneli",
       b.tenantName,
       b.agentName,
       (b.guestNames?.length ? b.guestNames : [b.customerName]).join(" / "),
@@ -1643,7 +1860,7 @@ export default function TurizmSaaSPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const sendWhatsAppVoucher = (b: BookingItem) => {
+  const buildVoucherMessage = (b: BookingItem) => {
     const rules = getTenantRules(b.tenantId);
     const dateLabel =
       b.startDate === b.endDate
@@ -1655,40 +1872,30 @@ export default function TurizmSaaSPanel() {
         ? b.guestNames.map((g, idx) => `${idx + 1}. Kişi: ${g}`).join(", ")
         : b.customerName;
 
-    const freeChildSummary =
-      b.freeChildCount > 0
-        ? `\n*0-6 Yaş Çocuk (Ücretsiz):* ${b.freeChildCount} Çocuk${
-            b.freeChildNames.filter(Boolean).length > 0
-              ? ` (${b.freeChildNames.filter(Boolean).join(", ")})`
-              : ""
-          }`
-        : "";
-
-    const discChildSummary =
-      b.discountedChildCount > 0
-        ? `\n*7-12 Yaş Çocuk (%50 İndirimli):* ${b.discountedChildCount} Çocuk${
-            b.discountedChildNames.filter(Boolean).length > 0
-              ? ` (${b.discountedChildNames.filter(Boolean).join(", ")})`
-              : ""
-          }`
-        : "";
-
     const balance = Math.max(0, b.totalAmount - b.paidAmount);
 
-    const voucherText =
-      `*MCF B2B • ${b.tenantName} | RESMİ VOUCHER*\n` +
+    return (
+      `*MCF B2B • ${b.tenantName} | REZERVASYON VOUCHER*\n` +
       `----------------------------------\n` +
       `*PNR Kodu:* ${b.pnr} (${b.status})\n` +
-      `*Kişi Adedi:* ${b.pax} Kişi (${guestsSummary})${freeChildSummary}${discChildSummary}\n` +
+      `*Kişi Adedi:* ${b.pax} Kişi (${guestsSummary})\n` +
+      (b.freeChildCount > 0 ? `*0-6 Yaş Çocuk (Ücretsiz):* ${b.freeChildCount}\n` : "") +
+      (b.discountedChildCount > 0 ? `*7-12 Yaş Çocuk (%50 İnd.):* ${b.discountedChildCount}\n` : "") +
       `*Hizmet:* ${b.itemTitle}\n` +
       `*Tarih Aralığı:* ${dateLabel}\n` +
       `*Saat Kuralı:* ${rules.checkInRule} | ${rules.checkOutRule}\n` +
       `*Toplam Tutar:* ${b.totalAmount} ${rules.currency} | *Ödeme:* ${b.paymentStatus} (Kalan: ${balance} ${rules.currency})\n` +
+      `*Müşteri Tel:* ${b.customerPhone}\n` +
       `----------------------------------\n` +
-      `MCF Technology & Software Solutions`;
+      `MCF Technology & Software Solutions`
+    );
+  };
 
+  const sendWhatsAppVoucher = (b: BookingItem, targetPhone?: string) => {
+    const destPhone = normalizePhoneTr(targetPhone || b.customerPhone);
+    if (!destPhone) return;
     window.open(
-      `https://wa.me/${b.customerPhone}?text=${encodeURIComponent(voucherText)}`,
+      `https://wa.me/${destPhone}?text=${encodeURIComponent(buildVoucherMessage(b))}`,
       "_blank"
     );
   };
@@ -1696,6 +1903,9 @@ export default function TurizmSaaSPanel() {
   if (!currentUser) {
     const activeSpec = PLAN_SPECS[showcasePlan];
     const filmLoopItems = [...HOLIDAY_SHOWCASE, ...HOLIDAY_SHOWCASE];
+    const pubRules = getTenantRules(selectedPubItem?.tenantId || null);
+    const pubBlocked = new Set(selectedPubItem?.bookedDates || []);
+    const pubSelectedSet = new Set(pubRangeIsos);
 
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 py-5 px-3 sm:px-6">
@@ -1730,7 +1940,7 @@ export default function TurizmSaaSPanel() {
                   MCF B2B TURİZM PORTALI
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-400">
-                  Kontenjan, rezervasyon, PNR, raporlama ve dijital voucher altyapısı
+                  Müşteri rezervasyon vitrini, WhatsApp/webhook iletişim ve acente operasyon ağı
                 </p>
               </div>
             </div>
@@ -1787,6 +1997,280 @@ export default function TurizmSaaSPanel() {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* MÜŞTERİ DOĞRUDAN REZERVASYON VİTRİNİ & GERÇEK İLETİŞİM */}
+          <div className="bg-[#0e1422] border border-indigo-500/30 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                  Müşteri Rezervasyon Ekranı
+                </span>
+                <h2 className="text-lg sm:text-xl font-bold text-white mt-0.5">
+                  Hemen Tarih Seç ve Rezervasyon Oluştur
+                </h2>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-300 bg-[#080c16] border border-slate-800 px-3 py-1.5 rounded-xl">
+                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                <span>WhatsApp + Panel + Webhook</span>
+              </div>
+            </div>
+
+            {selectedPubItem && !pubCreatedBooking ? (
+              <form
+                onSubmit={handlePublicCustomerBooking}
+                className="grid grid-cols-1 lg:grid-cols-12 gap-5"
+              >
+                <div className="lg:col-span-6 space-y-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">
+                      Otel / Tur / Hizmet Seçin
+                    </label>
+                    <select
+                      value={selectedPubItem.id}
+                      onChange={(e) => setPubItemId(e.target.value)}
+                      className="bg-[#080c16] border border-slate-700 focus:border-indigo-400 rounded-xl px-3.5 py-2.5 text-sm text-white w-full focus:outline-none"
+                    >
+                      {inventory.map((inv) => (
+                        <option key={inv.id} value={inv.id} disabled={inv.quota <= 0}>
+                          {inv.title} • {inv.tenantName} ({inv.sellPrice}{" "}
+                          {getTenantRules(inv.tenantId).currency}/Gün • Kalan: {inv.quota})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="bg-[#080c16] border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-200 inline-flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-emerald-400" /> Giriş & Çıkış Tarihi
+                      </span>
+                      <span className="text-[11px] text-amber-300">
+                        {pubRules.checkInRule} • {pubRules.checkOutRule}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {calendarDays.map((day) => {
+                        const isBlocked = pubBlocked.has(day.iso);
+                        const isInRange = !isBlocked && pubSelectedSet.has(day.iso);
+                        const isEdge =
+                          !isBlocked && (day.iso === pubStartDate || day.iso === pubEffectiveEnd);
+                        const isCheckoutDay =
+                          pubHasCheckout && day.iso === pubEffectiveEnd && !isBlocked;
+
+                        return (
+                          <button
+                            key={day.iso}
+                            type="button"
+                            disabled={isBlocked}
+                            onClick={() => handleSelectPubDay(day.iso)}
+                            className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
+                              isBlocked
+                                ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
+                                : isEdge
+                                ? "bg-emerald-600 border-emerald-300 text-white font-bold cursor-pointer"
+                                : isInRange
+                                ? "bg-emerald-500/35 border-emerald-400/70 text-emerald-100 font-semibold cursor-pointer"
+                                : "bg-slate-800/90 hover:bg-emerald-500/20 border-slate-700 text-white cursor-pointer"
+                            }`}
+                          >
+                            <span className="text-[9px] opacity-75">{day.weekday}</span>
+                            <span className="text-xs">{day.dayNum}</span>
+                            {isCheckoutDay && (
+                              <span className="text-[8px] font-bold text-emerald-200">Çıkış</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-xs text-emerald-400 font-mono">
+                      {pubStartDate === pubEffectiveEnd
+                        ? `${pubStartDate} (1 Gün)`
+                        : `${pubStartDate} → ${pubEffectiveEnd} • Fiyata Dahil: ${pubChargedDays} Gün`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-6 space-y-3.5">
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">13+ Yetişkin</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={Math.max(1, selectedPubItem.quota)}
+                        value={pubPax}
+                        onChange={(e) => syncPubPax(Number(e.target.value))}
+                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-emerald-400 mb-1">
+                        0-6 Yaş (Ücretsiz)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={pubFreeChild}
+                        onChange={(e) => setPubFreeChild(Math.max(0, Number(e.target.value)))}
+                        className="bg-[#080c16] border border-emerald-500/35 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-sky-400 mb-1">
+                        7-12 Yaş (%50 İnd.)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={pubDiscChild}
+                        onChange={(e) => setPubDiscChild(Math.max(0, Number(e.target.value)))}
+                        className="bg-[#080c16] border border-sky-500/35 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {Array.from({ length: pubPax }, (_, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        required
+                        value={pubGuestNames[i] || ""}
+                        onChange={(e) => {
+                          const next = [...pubGuestNames];
+                          next[i] = e.target.value;
+                          setPubGuestNames(next);
+                        }}
+                        placeholder={`${i + 1}. Misafir Adı Soyadı`}
+                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <input
+                      type="tel"
+                      required
+                      value={pubPhone}
+                      onChange={(e) => setPubPhone(e.target.value)}
+                      placeholder="WhatsApp / Telefon (05XX XXX XX XX)"
+                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                    />
+                    <input
+                      type="email"
+                      value={pubEmail}
+                      onChange={(e) => setPubEmail(e.target.value)}
+                      placeholder="E-posta (Opsiyonel)"
+                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white w-full"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <select
+                      value={pubPayment}
+                      onChange={(e) => setPubPayment(e.target.value as PaymentStatus)}
+                      className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full"
+                    >
+                      <option value="Kapora Alındı">Kapora ile Ön Rezervasyon</option>
+                      <option value="Ödendi">Tam Ödeme</option>
+                      <option value="Acente Cari">Acente / Yerinde Ödeme</option>
+                    </select>
+                    {pubPayment === "Kapora Alındı" && (
+                      <input
+                        type="number"
+                        min={0}
+                        max={pubTotalAmount}
+                        value={pubDeposit}
+                        onChange={(e) => setPubDeposit(Number(e.target.value))}
+                        placeholder={`Kapora (${pubRules.currency})`}
+                        className="bg-[#080c16] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white w-full"
+                      />
+                    )}
+                  </div>
+
+                  <div className="bg-[#080c16] border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 block">
+                        Toplam Tutar ({pubChargedDays} Gün)
+                      </span>
+                      <strong className="text-xl font-extrabold text-emerald-400">
+                        {pubTotalAmount.toLocaleString("tr-TR")} {pubRules.currency}
+                      </strong>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!pubStartDate || selectedPubItem.quota <= 0}
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-semibold text-xs sm:text-sm px-5 py-3 rounded-xl transition cursor-pointer"
+                    >
+                      Rezervasyon Yap & PNR Al
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : pubCreatedBooking ? (
+              <div className="bg-[#080c16] border border-emerald-500/35 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs text-emerald-400 font-semibold">
+                      Rezervasyonunuz Kaydedildi
+                    </span>
+                    <h3 className="text-2xl font-mono font-extrabold text-white mt-0.5">
+                      PNR: {pubCreatedBooking.pnr}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPubCreatedBooking(null);
+                      setPubGuestNames([""]);
+                      setPubPhone("");
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3.5 py-2 rounded-xl cursor-pointer"
+                  >
+                    Yeni Rezervasyon
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-300">
+                  <strong>{pubCreatedBooking.itemTitle}</strong> •{" "}
+                  {pubCreatedBooking.startDate} → {pubCreatedBooking.endDate} (
+                  {pubCreatedBooking.chargedDays} Gün) •{" "}
+                  <strong className="text-emerald-400">
+                    {pubCreatedBooking.totalAmount} {pubRules.currency}
+                  </strong>
+                </p>
+
+                {pubWebhookStatus && (
+                  <p className="text-xs text-sky-400">{pubWebhookStatus}</p>
+                )}
+
+                <div className="flex flex-wrap gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => sendWhatsAppVoucher(pubCreatedBooking)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Send className="w-4 h-4" /> Müşteriye WhatsApp Voucher Gönder
+                  </button>
+                  {pubRules.contactPhone && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        sendWhatsAppVoucher(pubCreatedBooking, pubRules.contactPhone)
+                      }
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4" /> Acenteye WhatsApp Bildirimi Gönder
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
@@ -2585,7 +3069,7 @@ export default function TurizmSaaSPanel() {
                 <div className="flex items-center gap-2.5">
                   <Clock className="w-5 h-5 text-amber-400 shrink-0" />
                   <h2 className="text-base sm:text-lg font-bold text-white">
-                    Acente Saat, Para Birimi & Paket Süresi Kuralları
+                    Acente Saat, İletişim & Paket Süresi Kuralları
                   </h2>
                 </div>
 
@@ -2661,6 +3145,37 @@ export default function TurizmSaaSPanel() {
                               handleUpdateTenantRules(t.id, { expiresAt: e.target.value })
                             }
                             className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1 inline-flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-emerald-400" /> Acente WhatsApp Tel
+                          </label>
+                          <input
+                            type="tel"
+                            value={t.contactPhone || ""}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, { contactPhone: e.target.value })
+                            }
+                            placeholder="905551234567"
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1 inline-flex items-center gap-1">
+                            <Globe className="w-3 h-3 text-indigo-400" /> E-posta / Webhook URL
+                          </label>
+                          <input
+                            type="text"
+                            value={t.notifyWebhookUrl || ""}
+                            onChange={(e) =>
+                              handleUpdateTenantRules(t.id, { notifyWebhookUrl: e.target.value })
+                            }
+                            placeholder="https://formsubmit.co/ajax/..."
+                            className="bg-[#0e1422] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white w-full font-mono"
                           />
                         </div>
                       </div>
@@ -2908,8 +3423,7 @@ export default function TurizmSaaSPanel() {
                       PNR, Ödeme & Voucher Listesi
                     </h2>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      0-6 Yaş Ücretsiz • 7-12 Yaş %50 İndirimli • Tarih güncelleme, iptal ve PDF
-                      voucher aktif
+                      Müşteri vitrini ve acente rezervasyonları • 0-6 Ücretsiz • 7-12 %50 İnd.
                     </p>
                   </div>
                   <button
@@ -2926,7 +3440,7 @@ export default function TurizmSaaSPanel() {
                     <thead className="bg-[#080c16] text-slate-400 text-xs uppercase">
                       <tr>
                         <th className="p-4">PNR</th>
-                        <th className="p-4">Acente</th>
+                        <th className="p-4">Acente / Kanal</th>
                         <th className="p-4">Misafirler</th>
                         <th className="p-4">Hizmet</th>
                         <th className="p-4">Tarih / Süre</th>
@@ -2958,7 +3472,9 @@ export default function TurizmSaaSPanel() {
                             </td>
                             <td className="p-4 text-xs">
                               <span className="font-semibold text-white block">{b.tenantName}</span>
-                              <span className="text-slate-400">{b.agentName}</span>
+                              <span className="text-slate-400">
+                                {b.agentName} ({b.channel || "Acente Paneli"})
+                              </span>
                             </td>
                             <td className="p-4 text-xs">
                               <span className="font-semibold text-white block">
@@ -2966,20 +3482,15 @@ export default function TurizmSaaSPanel() {
                                   ? b.guestNames.join(", ")
                                   : b.customerName}
                               </span>
+                              <span className="text-slate-400 block mt-0.5">{b.customerPhone}</span>
                               {b.freeChildCount > 0 && (
                                 <span className="text-emerald-400 block mt-0.5">
                                   + {b.freeChildCount} Çocuk (0-6 Yaş Ücretsiz)
-                                  {b.freeChildNames.filter(Boolean).length > 0
-                                    ? `: ${b.freeChildNames.filter(Boolean).join(", ")}`
-                                    : ""}
                                 </span>
                               )}
                               {b.discountedChildCount > 0 && (
                                 <span className="text-sky-400 block mt-0.5">
                                   + {b.discountedChildCount} Çocuk (7-12 Yaş %50 İnd.)
-                                  {b.discountedChildNames.filter(Boolean).length > 0
-                                    ? `: ${b.discountedChildNames.filter(Boolean).join(", ")}`
-                                    : ""}
                                 </span>
                               )}
                             </td>
@@ -3309,13 +3820,6 @@ export default function TurizmSaaSPanel() {
                             type="button"
                             disabled={isBlocked}
                             onClick={() => handleSelectCalendarDay(day.iso)}
-                            title={
-                              isBlocked
-                                ? `${day.iso} - Dolu / Seçilmiş`
-                                : isCheckoutOnlyDay
-                                ? `${day.iso} - Çıkış Günü (fiyata dahil değil)`
-                                : `${day.iso} - Müsait`
-                            }
                             className={`py-1.5 px-1 rounded-lg border text-center transition flex flex-col items-center ${
                               isBlocked
                                 ? "bg-slate-900/80 border-slate-800 text-slate-500 line-through cursor-not-allowed opacity-60"
@@ -3591,22 +4095,6 @@ export default function TurizmSaaSPanel() {
                         </p>
                       ))}
                     </div>
-                    {lastCreatedBooking.freeChildCount > 0 && (
-                      <p className="text-emerald-400 font-medium">
-                        0-6 Yaş Çocuk (Ücretsiz): {lastCreatedBooking.freeChildCount} Çocuk
-                        {lastCreatedBooking.freeChildNames.filter(Boolean).length > 0
-                          ? ` (${lastCreatedBooking.freeChildNames.filter(Boolean).join(", ")})`
-                          : ""}
-                      </p>
-                    )}
-                    {lastCreatedBooking.discountedChildCount > 0 && (
-                      <p className="text-sky-400 font-medium">
-                        7-12 Yaş Çocuk (%50 İnd.): {lastCreatedBooking.discountedChildCount} Çocuk
-                        {lastCreatedBooking.discountedChildNames.filter(Boolean).length > 0
-                          ? ` (${lastCreatedBooking.discountedChildNames.filter(Boolean).join(", ")})`
-                          : ""}
-                      </p>
-                    )}
                     <p className="text-slate-400">
                       <span className="text-white font-medium">{lastCreatedBooking.itemTitle}</span>
                     </p>
@@ -3614,16 +4102,6 @@ export default function TurizmSaaSPanel() {
                       {lastCreatedBooking.startDate === lastCreatedBooking.endDate
                         ? `${lastCreatedBooking.startDate} (${lastCreatedBooking.chargedDays} Gün)`
                         : `${lastCreatedBooking.startDate} → ${lastCreatedBooking.endDate} (${lastCreatedBooking.chargedDays} Gün Ücretlendirildi)`}
-                    </p>
-                    <p className="text-slate-400">
-                      {itemRules.checkInRule} • {itemRules.checkOutRule}
-                    </p>
-                    <p className="text-slate-400">
-                      <span className="text-indigo-400 font-bold">
-                        {lastCreatedBooking.totalAmount} {itemRules.currency}
-                      </span>{" "}
-                      • {lastCreatedBooking.paymentStatus} ({lastCreatedBooking.paidAmount}{" "}
-                      {itemRules.currency})
                     </p>
                   </div>
 
@@ -3774,8 +4252,10 @@ export default function TurizmSaaSPanel() {
                     <strong className="text-white">{printVoucherBooking.itemTitle}</strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Danışman / Acente</span>
-                    <strong className="text-white">{printVoucherBooking.agentName}</strong>
+                    <span className="text-slate-400 block">Danışman / Kanal</span>
+                    <strong className="text-white">
+                      {printVoucherBooking.agentName} ({printVoucherBooking.channel || "Acente"})
+                    </strong>
                   </div>
                   <div>
                     <span className="text-slate-400 block">Tarih Aralığı</span>
@@ -3804,22 +4284,6 @@ export default function TurizmSaaSPanel() {
                       .map((g, idx) => `${idx + 1}. ${g}`)
                       .join(" • ")}
                   </p>
-                  {printVoucherBooking.freeChildCount > 0 && (
-                    <p className="text-emerald-400">
-                      0-6 Yaş Çocuk (Ücretsiz): {printVoucherBooking.freeChildCount} Çocuk
-                      {printVoucherBooking.freeChildNames.filter(Boolean).length > 0
-                        ? ` (${printVoucherBooking.freeChildNames.filter(Boolean).join(", ")})`
-                        : ""}
-                    </p>
-                  )}
-                  {printVoucherBooking.discountedChildCount > 0 && (
-                    <p className="text-sky-400">
-                      7-12 Yaş Çocuk (%50 İnd.): {printVoucherBooking.discountedChildCount} Çocuk
-                      {printVoucherBooking.discountedChildNames.filter(Boolean).length > 0
-                        ? ` (${printVoucherBooking.discountedChildNames.filter(Boolean).join(", ")})`
-                        : ""}
-                    </p>
-                  )}
                 </div>
 
                 <div className="border-t border-slate-800 pt-2.5 flex flex-wrap items-center justify-between gap-2">
