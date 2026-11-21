@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Users,
   ShieldCheck,
@@ -100,6 +100,13 @@ interface PlanSpec {
   features: string[];
 }
 
+interface CalendarDayItem {
+  iso: string;
+  dayNum: number;
+  weekday: string;
+  monthShort: string;
+}
+
 const PLAN_SPECS: Record<PlanType, PlanSpec> = {
   Trial: {
     monthlyAmount: 0,
@@ -185,6 +192,17 @@ const HOLIDAY_SHOWCASE = [
 const IBAN_OWNER = "Mehmet Cihan Ferhatoğlu";
 const IBAN_NUMBER = "TR11 0004 9044 8275 9750 06";
 
+const FALLBACK_CALENDAR_DAYS: CalendarDayItem[] = Array.from({ length: 21 }, (_, idx) => {
+  const dayNum = idx + 1;
+  const weekdays = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+  return {
+    iso: `2026-12-${String(dayNum).padStart(2, "0")}`,
+    dayNum,
+    weekday: weekdays[idx % 7],
+    monthShort: "Ara",
+  };
+});
+
 function formatIsoDate(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -192,13 +210,26 @@ function formatIsoDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-function getUpcomingDays(count = 21): { iso: string; dayNum: number; weekday: string; monthShort: string }[] {
+function buildUpcomingDays(count = 21): CalendarDayItem[] {
   const base = new Date();
   base.setHours(12, 0, 0, 0);
   const weekdays = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
-  const months = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  const months = [
+    "Oca",
+    "Şub",
+    "Mar",
+    "Nis",
+    "May",
+    "Haz",
+    "Tem",
+    "Ağu",
+    "Eyl",
+    "Eki",
+    "Kas",
+    "Ara",
+  ];
 
-  const list: { iso: string; dayNum: number; weekday: string; monthShort: string }[] = [];
+  const list: CalendarDayItem[] = [];
   for (let i = 0; i < count; i++) {
     const dt = new Date(base);
     dt.setDate(base.getDate() + i);
@@ -285,7 +316,7 @@ function ShowcaseImage({
 }
 
 export default function TurizmSaaSPanel() {
-  const calendarDays = getUpcomingDays(21);
+  const [calendarDays, setCalendarDays] = useState<CalendarDayItem[]>(FALLBACK_CALENDAR_DAYS);
 
   const [tenants, setTenants] = useState<TenantAgency[]>([
     {
@@ -420,65 +451,80 @@ export default function TurizmSaaSPanel() {
   const [newSubPassword, setNewSubPassword] = useState("123");
   const [newSubTenantId, setNewSubTenantId] = useState("FIRM-AKDENIZ");
 
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-    const d2 = calendarDays[2]?.iso || "2026-11-23";
-    const d5 = calendarDays[5]?.iso || "2026-11-26";
-    const d8 = calendarDays[8]?.iso || "2026-11-29";
-    return [
-      {
-        id: "HTL-01",
-        tenantId: "FIRM-AKDENIZ",
-        tenantName: "Akdeniz Turizm A.Ş.",
-        category: "OTEL",
-        title: "Kızkalesi Panorama Butik Otel",
-        quota: 6,
-        netPrice: 1200,
-        sellPrice: 1500,
-        commission: 300,
-        imageSrc: "/3.webp",
-        bookedDates: [d2, d5],
-      },
-      {
-        id: "TUR-03",
-        tenantId: "FIRM-AKDENIZ",
-        tenantName: "Akdeniz Turizm A.Ş.",
-        category: "TUR",
-        title: "Kapadokya Balon & Konaklama Turu",
-        quota: 12,
-        netPrice: 3500,
-        sellPrice: 4200,
-        commission: 700,
-        imageSrc: "/2.webp",
-        bookedDates: [d5, d8],
-      },
-      {
-        id: "PNS-02",
-        tenantId: "FIRM-ERDEMLI",
-        tenantName: "Erdemli & Silifke Travel",
-        category: "PANSİYON",
-        title: "Silifke Sahil Aile Pansiyonu",
-        quota: 9,
-        netPrice: 800,
-        sellPrice: 1000,
-        commission: 200,
-        imageSrc: "/5.png",
-        bookedDates: [d2],
-      },
-      {
-        id: "DEM-01",
-        tenantId: "FIRM-DEMO",
-        tenantName: "Mersin Demo Acente",
-        category: "OTOBÜS",
-        title: "Mersin - Adana Transfer Kontenjanı",
-        quota: 8,
-        netPrice: 250,
-        sellPrice: 350,
-        commission: 100,
-        imageSrc: "/1.webp",
-        bookedDates: [d8],
-      },
-    ];
-  });
+  const [inventory, setInventory] = useState<InventoryItem[]>([
+    {
+      id: "HTL-01",
+      tenantId: "FIRM-AKDENIZ",
+      tenantName: "Akdeniz Turizm A.Ş.",
+      category: "OTEL",
+      title: "Kızkalesi Panorama Butik Otel",
+      quota: 6,
+      netPrice: 1200,
+      sellPrice: 1500,
+      commission: 300,
+      imageSrc: "/3.webp",
+      bookedDates: ["2026-12-03", "2026-12-06"],
+    },
+    {
+      id: "TUR-03",
+      tenantId: "FIRM-AKDENIZ",
+      tenantName: "Akdeniz Turizm A.Ş.",
+      category: "TUR",
+      title: "Kapadokya Balon & Konaklama Turu",
+      quota: 12,
+      netPrice: 3500,
+      sellPrice: 4200,
+      commission: 700,
+      imageSrc: "/2.webp",
+      bookedDates: ["2026-12-06", "2026-12-09"],
+    },
+    {
+      id: "PNS-02",
+      tenantId: "FIRM-ERDEMLI",
+      tenantName: "Erdemli & Silifke Travel",
+      category: "PANSİYON",
+      title: "Silifke Sahil Aile Pansiyonu",
+      quota: 9,
+      netPrice: 800,
+      sellPrice: 1000,
+      commission: 200,
+      imageSrc: "/5.png",
+      bookedDates: ["2026-12-03"],
+    },
+    {
+      id: "DEM-01",
+      tenantId: "FIRM-DEMO",
+      tenantName: "Mersin Demo Acente",
+      category: "OTOBÜS",
+      title: "Mersin - Adana Transfer Kontenjanı",
+      quota: 8,
+      netPrice: 250,
+      sellPrice: 350,
+      commission: 100,
+      imageSrc: "/1.webp",
+      bookedDates: ["2026-12-09"],
+    },
+  ]);
+
+  useEffect(() => {
+    const days = buildUpcomingDays(21);
+    setCalendarDays(days);
+
+    const d2 = days[2]?.iso;
+    const d5 = days[5]?.iso;
+    const d8 = days[8]?.iso;
+    if (d2 && d5 && d8) {
+      setInventory((prev) =>
+        prev.map((item, idx) => {
+          if (idx === 0) return { ...item, bookedDates: [d2, d5] };
+          if (idx === 1) return { ...item, bookedDates: [d5, d8] };
+          if (idx === 2) return { ...item, bookedDates: [d2] };
+          if (idx === 3) return { ...item, bookedDates: [d8] };
+          return item;
+        })
+      );
+    }
+  }, []);
 
   const [bookings, setBookings] = useState<BookingItem[]>([
     {
@@ -961,7 +1007,6 @@ export default function TurizmSaaSPanel() {
     setNewSellPrice(1300);
   };
 
-  // Normal rezervasyon formunu doğrudan aç ve ilk müsait tarihi seçili getir
   const openBookingModal = (item: InventoryItem) => {
     const blocked = new Set(item.bookedDates || []);
     const firstAvailable = calendarDays.find((d) => !blocked.has(d.iso))?.iso || "";
@@ -1051,7 +1096,6 @@ export default function TurizmSaaSPanel() {
     );
   };
 
-  // ÖN YÜZ EKRANI + TIKLAYINCA AÇILAN İNTRO ŞİFRE FORMU
   if (!currentUser) {
     const activeSpec = PLAN_SPECS[showcasePlan];
     const filmLoopItems = [...HOLIDAY_SHOWCASE, ...HOLIDAY_SHOWCASE];
@@ -1081,7 +1125,6 @@ export default function TurizmSaaSPanel() {
         `}</style>
 
         <div className="max-w-6xl mx-auto space-y-6">
-          {/* ÜST BAR + SAĞ ÜSTTE superadmin & YANINDA Ayrı password KUTUSU */}
           <div className="bg-[#0e1422] border border-slate-800/90 rounded-3xl p-4 sm:p-6 flex flex-wrap items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3.5 min-w-0">
               <BrandLogo size="lg" />
@@ -1124,7 +1167,6 @@ export default function TurizmSaaSPanel() {
             </form>
           </div>
 
-          {/* KAYAN FİLM ŞERİDİ (TATİL GÖRSELLERİ) */}
           <div className="bg-[#0e1422] border border-slate-800/90 rounded-3xl p-4 sm:p-5 shadow-xl overflow-hidden">
             <div className="overflow-hidden rounded-2xl">
               <div className="mcf-film-track gap-3.5 pr-3.5">
@@ -1150,7 +1192,6 @@ export default function TurizmSaaSPanel() {
             </div>
           </div>
 
-          {/* AÇILIR KUTU PAKET SEÇİMİ & İÇERİĞİ + IBAN */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
             <div
               className={`lg:col-span-7 bg-[#0e1422] border ${activeSpec.cardBorder} rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-lg`}
@@ -1187,7 +1228,6 @@ export default function TurizmSaaSPanel() {
               </div>
             </div>
 
-            {/* IBAN & HESAP SAHİBİ */}
             <div className="lg:col-span-5 bg-[#0e1422] border border-slate-800/90 rounded-2xl p-5 flex flex-col justify-between space-y-3 shadow-lg">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
@@ -1221,7 +1261,6 @@ export default function TurizmSaaSPanel() {
             </div>
           </div>
 
-          {/* HİYERARŞİK HESAP LİSTESİ (TIKLAYINCA İNTRO ŞİFRE KUTUSU AÇILIR) */}
           <div className="bg-[#0e1422] border border-slate-800/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-lg">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               {tenants.map((tenant) => {
@@ -1285,7 +1324,6 @@ export default function TurizmSaaSPanel() {
           </div>
         </div>
 
-        {/* İNTRO ŞİFRE GİRİŞ FORM KUTUSU (TIKLANINCA AÇILIR) */}
         {introAccount && (
           <div
             onClick={() => {
@@ -1356,7 +1394,6 @@ export default function TurizmSaaSPanel() {
     );
   }
 
-  // YENİ ŞİFRE BELİRLEME EKRANI
   if (showNewPasswordScreen) {
     return (
       <div className="min-h-screen bg-[#070b14] text-slate-100 flex items-center justify-center p-4">
@@ -1442,7 +1479,6 @@ export default function TurizmSaaSPanel() {
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
-      {/* ÜST BAR */}
       <header className="border-b border-slate-800/80 bg-[#0b101d] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 sticky top-0 z-30">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -1485,7 +1521,6 @@ export default function TurizmSaaSPanel() {
         </div>
       </header>
 
-      {/* ANA GÖVDE: KISA SOL MENÜ + SAĞ İÇERİK */}
       <div className="flex-1 flex flex-col md:flex-row items-start p-4 sm:p-6 gap-5 max-w-7xl w-full mx-auto">
         <aside
           className={`${
@@ -1582,7 +1617,6 @@ export default function TurizmSaaSPanel() {
           </div>
         </aside>
 
-        {/* SAĞ İÇERİK ALANI */}
         <main className="flex-1 min-w-0 w-full">
           {limitNotice && (
             <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1608,7 +1642,6 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 1: KONTENJAN & SATIŞ */}
           {activeTab === "dashboard" && (
             <div>
               <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1720,7 +1753,6 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 2: HİYERARŞİ */}
           {activeTab === "hierarchy" && (
             <div className="space-y-6">
               <div>
@@ -1823,7 +1855,6 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 3: ACENTE & PAKET YÖNETİMİ */}
           {activeTab === "tenants" && currentUser.role !== "SUB_AGENT" && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2045,7 +2076,6 @@ export default function TurizmSaaSPanel() {
             </div>
           )}
 
-          {/* SEKME 4: PNR & VOUCHER */}
           {activeTab === "bookings" && (
             <div className="bg-[#0e1422] border border-slate-800 rounded-2xl overflow-hidden">
               <div className="p-4 sm:p-5 border-b border-slate-800">
@@ -2100,7 +2130,6 @@ export default function TurizmSaaSPanel() {
         </main>
       </div>
 
-      {/* YENİ KONTENJAN / DÜZENLEME MODALI */}
       {isAddModalOpen && currentUser.role !== "SUB_AGENT" && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -2263,7 +2292,6 @@ export default function TurizmSaaSPanel() {
         </div>
       )}
 
-      {/* NORMAL REZERVASYON FORMU + MÜSAİTLİK TAKVİMİ */}
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0e1422] border border-slate-700/80 rounded-2xl w-full max-w-md p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -2293,7 +2321,6 @@ export default function TurizmSaaSPanel() {
                   </p>
                 </div>
 
-                {/* TARİH BÖLÜMÜ: MÜSAİT OLANLAR KOYU/YEŞİL, SEÇİLMİŞ/DOLU OLANLAR GRİ VE TIKLANAMAZ */}
                 <div className="bg-[#080c16] border border-slate-800 rounded-xl p-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs text-slate-300 font-medium inline-flex items-center gap-1.5">
